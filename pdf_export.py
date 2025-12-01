@@ -1,11 +1,12 @@
 """
 Модуль експорту звіту у формат PDF.
 Забезпечує гарантовану підтримку кирилиці (DejaVuSans), 
-розумні розриви сторінок для таблиць та оптимізацію розміру діаграм.
+логіку нерозривності таблиць (Keep Together) та збільшені діаграми.
 """
 
 import io
 import os
+import math
 import tempfile
 import requests
 import pandas as pd
@@ -23,11 +24,9 @@ def get_font_path() -> Optional[str]:
     """Шукає або завантажує шрифт DejaVuSans.ttf."""
     local_path = "DejaVuSans.ttf"
     
-    # Перевірка локального файлу
     if os.path.exists(local_path) and os.path.getsize(local_path) > 10000:
         return local_path
 
-    # Перевірка системних шляхів
     system_paths = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/TTF/DejaVuSans.ttf",
@@ -37,7 +36,6 @@ def get_font_path() -> Optional[str]:
         if os.path.exists(path):
             return path
 
-    # Завантаження
     try:
         headers = {'User-Agent': 'Mozilla/5.0'}
         response = requests.get(FONT_URL, headers=headers, timeout=10)
@@ -73,7 +71,7 @@ class PDFReport(FPDF):
         self.set_text_color(0, 0, 0)
 
     def chapter_title(self, text):
-        # Якщо ми в самому низу сторінки, краще почати нову, щоб заголовок не висів сам
+        # Якщо заголовок внизу сторінки, переносимо його
         if self.get_y() > 250:
             self.add_page()
             
@@ -82,89 +80,107 @@ class PDFReport(FPDF):
         self.multi_cell(0, 8, str(text), fill=True, align='L')
         self.ln(2)
 
-    def draw_table_header(self, headers, col_width, line_height):
-        """Допоміжна функція для малювання шапки таблиці."""
-        self.set_fill_color(240, 240, 240)
-        self.set_font(FONT_NAME, "", 10)
-        x_start = self.get_x()
-        y_start = self.get_y()
+    def calculate_row_height(self, text_val, col_width, line_height):
+        """
+        Розраховує висоту рядка на основі довжини тексту.
+        Евристика: ~50-55 символів на рядок при ширині 110мм і шрифті 10pt.
+        """
+        text_len = len(str(text_val))
+        # Приблизно 55 символів вміщається в одну лінію
+        lines_count = math.ceil(text_len / 50)
+        if lines_count < 1: lines_count = 1
         
-        # Малюємо шапку
+        # Враховуємо явні переноси рядків
+        newlines = str(text_val).count('\n')
+        lines_count += newlines
+        
+        return lines_count * line_height
+
+    def add_table(self, df: pd.DataFrame):
+        self.set_font(FONT_NAME, "", 10)
+        line_height = 6
+        col_width = [110, 30, 20] 
+        headers = df.columns.tolist()
+
+        # --- Етап 1: Розрахунок повної висоти таблиці ---
+        total_table_height = line_height # Висота шапки
+        row_heights = []
+
+        for row in df.itertuples(index=False):
+            text_val = str(row[0])
+            h = self.calculate_row_height(text_val, col_width[0], line_height)
+            row_heights.append(h)
+            total_table_height += h
+
+        # --- Етап 2: Прийняття рішення про перенос ---
+        # Висота сторінки А4 ~297мм. Робоча область до ~275мм.
+        page_break_trigger = 270
+        space_left = page_break_trigger - self.get_y()
+
+        # Логіка: 
+        # 1. Якщо таблиця ВЛАЗИТЬ на чисту сторінку (вона менша за ~240мм)
+        # 2. І вона НЕ ВЛАЗИТЬ на поточну сторінку
+        # -> Тоді робимо нову сторінку
+        if total_table_height < 240 and total_table_height > space_left:
+            self.add_page()
+
+        # --- Етап 3: Друк таблиці ---
+        # Друк шапки
+        self.set_fill_color(240, 240, 240)
         for i, h in enumerate(headers):
             w = col_width[i] if i < len(col_width) else 20
             self.cell(w, line_height, str(h), border=1, fill=True, align='C')
         self.ln(line_height)
 
-    def add_table(self, df: pd.DataFrame):
-        self.set_font(FONT_NAME, "", 10)
-        line_height = 6  # Базова висота рядка
-        col_width = [110, 30, 20] 
-        headers = df.columns.tolist() 
-
-        # Малюємо першу шапку
-        self.draw_table_header(headers, col_width, line_height)
-
-        for row in df.itertuples(index=False):
+        # Друк рядків
+        for idx, row in enumerate(df.itertuples(index=False)):
             text_val = str(row[0])
             count_val = str(row[1])
             perc_val = str(row[2])
-
-            # 1. Розраховуємо висоту, яку займе цей рядок
-            # FPDF не має прямого методу get_string_height для multi_cell до версії 2.5+
-            # Тому ми робимо емуляцію: рахуємо кількість рядків тексту
-            # Приблизно: довжина тексту / ширина колонки (в символах)
-            # Але надійніше використовувати вбудований метод, якщо він є, або "на око" з запасом
             
-            # Використовуємо multi_cell в режимі "dry run" або просто розрахунок рядків
-            # В даному випадку просто перевіримо скільки рядків займе текст
-            # Припускаємо, що ~60 символів влазить в 110мм при шрифті 10
-            lines_count = max(1, len(text_val) // 55 + 1)
-            # Додаємо трохи запасу на переноси слів
-            if '\n' in text_val:
-                lines_count += text_val.count('\n')
-            
-            row_height = lines_count * line_height
+            curr_h = row_heights[idx]
 
-            # 2. Перевірка розриву сторінки
-            # Якщо поточний Y + висота рядка > 275 (майже кінець А4), робимо нову сторінку
-            if self.get_y() + row_height > 275:
+            # Аварійний розрив: якщо таблиця гігантська і ми все ж дійшли до кінця сторінки
+            if self.get_y() + curr_h > page_break_trigger:
                 self.add_page()
-                self.draw_table_header(headers, col_width, line_height)
+                # Повтор шапки на новій сторінці
+                for i, h in enumerate(headers):
+                    w = col_width[i] if i < len(col_width) else 20
+                    self.cell(w, line_height, str(h), border=1, fill=True, align='C')
+                self.ln(line_height)
 
-            # 3. Малюємо рядок
             x_start = self.get_x()
             y_start = self.get_y()
 
-            # Текст (Варіант)
+            # Текст
             self.multi_cell(col_width[0], line_height, text_val, border=1, align='L')
             
-            # Запам'ятовуємо, де закінчився multi_cell (реальна висота)
             x_next = self.get_x()
             y_next = self.get_y()
-            h_real = y_next - y_start
+            # Реальна висота, яку зайняв text (іноді multi_cell може зайняти більше, ніж ми розрахували)
+            h_real = y_next - y_start 
             
-            # Повертаємось наверх для малювання чисел
+            # Якщо реальна висота відрізняється від розрахункової, беремо більшу, щоб числа були по центру
+            final_h = max(h_real, curr_h)
+
+            # Числа
             self.set_xy(x_start + col_width[0], y_start)
+            self.cell(col_width[1], final_h, count_val, border=1, align='C')
+            self.cell(col_width[2], final_h, perc_val, border=1, align='C')
             
-            # Кількість
-            self.cell(col_width[1], h_real, count_val, border=1, align='C')
-            # %
-            self.cell(col_width[2], h_real, perc_val, border=1, align='C')
-            
-            # Переходимо на наступний рядок (під найнижчу комірку)
-            self.set_xy(x_start, y_next)
+            self.set_xy(x_start, y_start + final_h)
 
     def add_chart(self, qs: QuestionSummary):
         if qs.table.empty:
             return
 
-        # Перевірка місця перед малюванням графіка
-        # Графік займає десь 80-90 одиниць висоти
-        if self.get_y() > 200:
+        # Перевірка місця: графіку потрібно десь 100мм
+        if self.get_y() > 180:
             self.add_page()
 
-        # Збільшуємо figsize для кращої якості, fpdf потім стисне до w=170
-        plt.figure(figsize=(10, 5)) 
+        # Збільшуємо розмір фігури (Ширина, Висота)
+        # Було (10, 5), стало (12, 7) - це зробить елементи крупнішими
+        plt.figure(figsize=(12, 7)) 
         
         labels = qs.table["Варіант відповіді"]
         values = qs.table["Кількість"]
@@ -172,41 +188,42 @@ class PDFReport(FPDF):
         if qs.question.qtype == QuestionType.SCALE:
             # Bar chart
             bars = plt.bar(labels, values, color='#4F81BD', width=0.6)
-            plt.ylabel('Кількість')
+            plt.ylabel('Кількість', fontsize=11)
             plt.grid(axis='y', linestyle='--', alpha=0.5)
-            # Значення над стовпчиками
+            plt.xticks(fontsize=10)
+            plt.yticks(fontsize=10)
+            
             for bar in bars:
                 height = bar.get_height()
                 plt.text(bar.get_x() + bar.get_width()/2., height + 0.1,
-                         f'{int(height)}', ha='center', va='bottom', fontsize=10, fontweight='bold')
-            plt.xticks(rotation=0)
+                         f'{int(height)}', ha='center', va='bottom', fontsize=11, fontweight='bold')
         else:
             # Pie chart
-            # startangle=90 виглядає звичніше
+            # colors - приємна палітра
             colors = ['#4F81BD', '#C0504D', '#9BBB59', '#8064A2', '#4BACC6', '#F79646']
-            # Тільки якщо даних менше ніж кольорів, інакше дефолтні
             c_arg = colors[:len(values)] if len(values) <= len(colors) else None
             
+            # textprops={'fontsize': 11} збільшує % на діаграмі
             plt.pie(values, labels=None, autopct='%1.1f%%', startangle=90, 
-                    pctdistance=0.85, colors=c_arg, textprops={'fontsize': 10})
+                    pctdistance=0.85, colors=c_arg, textprops={'fontsize': 11, 'weight': 'bold'})
             
-            # Легенда збоку
-            plt.legend(labels, loc="center left", bbox_to_anchor=(1, 0.5), fontsize=10)
+            # Легенда: збільшуємо шрифт і виносимо її так, щоб не стискала графік
+            plt.legend(labels, loc="center left", bbox_to_anchor=(1, 0.5), fontsize=11)
             plt.axis('equal') 
 
-        plt.tight_layout()
+        # tight_layout з малим паддінгом прибирає білі поля
+        plt.tight_layout(pad=1.5)
 
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_img:
-            # bbox_inches='tight' обрізає зайве біле поле!
-            # pad_inches=0.1 додає маленький відступ, щоб підписи не різались
-            plt.savefig(tmp_img.name, format='png', dpi=150, bbox_inches='tight', pad_inches=0.1)
+            # bbox_inches='tight' + pad_inches=0.05 максимально обрізає порожнечу
+            plt.savefig(tmp_img.name, format='png', dpi=150, bbox_inches='tight', pad_inches=0.05)
             tmp_img_path = tmp_img.name
         
         plt.close()
 
-        # Вставляємо на всю ширину сторінки (майже)
-        # А4 ширина 210, відступи по 10 -> 190. Беремо 170 для краси.
-        self.image(tmp_img_path, x=20, w=170)
+        # Вставляємо зображення
+        # Ширина 180мм (майже вся ширина А4 з полями)
+        self.image(tmp_img_path, x=15, w=180)
         self.ln(5)
         
         try:
@@ -227,7 +244,7 @@ def build_pdf_report(
         err_pdf = FPDF()
         err_pdf.add_page()
         err_pdf.set_font("Helvetica", size=12)
-        err_pdf.multi_cell(0, 10, "CRITICAL ERROR: Cyrillic font (DejaVuSans) not found.\nCannot generate report.")
+        err_pdf.multi_cell(0, 10, "CRITICAL ERROR: Cyrillic font not found.")
         return bytes(err_pdf.output())
 
     pdf = PDFReport(font_path)
@@ -266,7 +283,6 @@ def build_pdf_report(
 
         pdf.ln(5)
         
-        # Додаємо діаграму
         try:
             pdf.add_chart(qs)
         except Exception:
