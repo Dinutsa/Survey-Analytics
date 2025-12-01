@@ -23,6 +23,7 @@ from data_loader import load_excels, get_row_bounds, slice_range
 from classification import classify_questions, QuestionType
 from summary import build_all_summaries
 from excel_export import build_excel_report
+from pdf_export import build_pdf_report
 
 st.set_page_config(
     page_title="Обробка результатів студентських опитувань",
@@ -278,23 +279,48 @@ def main():
                 st.dataframe(selected.table)
 
         # --- Експорт звіту ---
+# --- Експорт звіту ---
         st.subheader("Експорт результатів")
         range_info = f"Рядки {st.session_state.from_row}–{st.session_state.to_row} (усього {len(sliced)} анкет)"
-        report_bytes = build_excel_report(
-            original_df=st.session_state.ld.df,
-            sliced_df=st.session_state.sliced,
-            qinfo=st.session_state.qinfo,
-            summaries=st.session_state.summaries,
-            range_info=range_info,
-        )
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # EXCEL
+            report_bytes_xlsx = build_excel_report(
+                original_df=st.session_state.ld.df,
+                sliced_df=st.session_state.sliced,
+                qinfo=st.session_state.qinfo,
+                summaries=st.session_state.summaries,
+                range_info=range_info,
+            )
+            st.download_button(
+                label="📥 Завантажити звіт (Excel)",
+                data=report_bytes_xlsx,
+                file_name="survey_results.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
 
-        st.download_button(
-            label="Завантажити звіт (Excel)",
-            data=report_bytes,
-            file_name="opituvalny_analiz_report.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
-
+        with col2:
+            # PDF
+            # Генеруємо PDF тільки при натисканні (може зайняти пару секунд)
+            if st.button("📄 Згенерувати PDF-звіт"):
+                with st.spinner("Генеруємо PDF-документ (це може зайняти час)..."):
+                    try:
+                        report_bytes_pdf = build_pdf_report(
+                            original_df=st.session_state.ld.df,
+                            sliced_df=st.session_state.sliced,
+                            summaries=st.session_state.summaries,
+                            range_info=range_info,
+                        )
+                        st.download_button(
+                            label="📥 Завантажити PDF",
+                            data=report_bytes_pdf,
+                            file_name="survey_results.pdf",
+                            mime="application/pdf",
+                        )
+                    except Exception as e:
+                        st.error(f"Помилка створення PDF: {e}")
 
 if __name__ == "__main__":
     main()
