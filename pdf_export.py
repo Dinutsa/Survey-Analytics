@@ -1,6 +1,6 @@
 """
 Модуль експорту звіту у формат PDF.
-Забезпечує підтримку кирилиці (DejaVuSans) та генерацію статичних графіків.
+Забезпечує гарантовану підтримку кирилиці (DejaVuSans).
 """
 
 import io
@@ -12,62 +12,92 @@ import matplotlib.pyplot as plt
 from fpdf import FPDF
 from classification import QuestionInfo, QuestionType
 from summary import QuestionSummary
-from typing import List
+from typing import List, Optional
 
-# Надійне посилання на шрифт DejaVuSans (стандарт для кирилиці)
+# Посилання на шрифт
 FONT_URL = "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/ttf/DejaVuSans.ttf"
 FONT_NAME = "DejaVuSans"
+
+def get_font_path() -> Optional[str]:
+    """
+    Шукає шрифт з підтримкою кирилиці:
+    1. У поточній папці.
+    2. У системних папках Linux (Streamlit Cloud).
+    3. Намагається завантажити з Інтернету.
+    """
+    local_path = "DejaVuSans.ttf"
+    
+    # 1. Перевіряємо локальний файл
+    if os.path.exists(local_path) and os.path.getsize(local_path) > 10000:
+        return local_path
+
+    # 2. Перевіряємо системні шляхи (стандартні для Linux/Debian/Streamlit Cloud)
+    system_paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/TTF/DejaVuSans.ttf",
+        "/usr/local/share/fonts/DejaVuSans.ttf"
+    ]
+    for path in system_paths:
+        if os.path.exists(path):
+            return path
+
+    # 3. Завантажуємо, якщо не знайшли
+    try:
+        print("Downloading font...")
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(FONT_URL, headers=headers, timeout=10)
+        response.raise_for_status()
+        with open(local_path, "wb") as f:
+            f.write(response.content)
+        return local_path
+    except Exception as e:
+        print(f"Font download failed: {e}")
+        return None
 
 class PDFReport(FPDF):
     def __init__(self, font_path):
         super().__init__()
         self.font_path = font_path
         
-        # Реєстрація шрифту
-        if font_path:
-            self.add_font(FONT_NAME, "", font_path, uni=True)
-            self.set_font(FONT_NAME, size=12)
-        else:
-            self.set_font("Arial", size=12)
+        if not font_path:
+            raise RuntimeError("Критична помилка: Не знайдено шрифт для кирилиці.")
+
+        # Реєструємо шрифт. uni=True важливий для fpdf < 2.5, для нових версій це стандарт
+        self.add_font(FONT_NAME, "", font_path, uni=True)
+        self.set_font(FONT_NAME, size=12)
 
     def header(self):
-        # Використовуємо registered font name або стандартний
-        font = FONT_NAME if self.font_path else "Arial"
-        self.set_font(font, "", 10)
+        self.set_font(FONT_NAME, "", 10)
         self.cell(0, 10, "Звіт за результатами опитування", border=False, align="R")
         self.ln(10)
 
     def footer(self):
-        font = FONT_NAME if self.font_path else "Arial"
         self.set_y(-15)
-        self.set_font(font, "", 8)
+        self.set_font(FONT_NAME, "", 8)
         self.cell(0, 10, f"Сторінка {self.page_no()}", align="C")
 
     def chapter_title(self, text):
-        font = FONT_NAME if self.font_path else "Arial"
-        self.set_font(font, "", 12)
+        self.set_font(FONT_NAME, "", 12)
         self.set_fill_color(220, 230, 241) 
-        # text=str(text) на випадок якщо там не рядок
+        # text=str(text) для безпеки
         self.multi_cell(0, 10, str(text), fill=True, align='L')
         self.ln(2)
 
     def add_table(self, df: pd.DataFrame):
-        font = FONT_NAME if self.font_path else "Arial"
-        self.set_font(font, "", 10)
-        
+        self.set_font(FONT_NAME, "", 10)
         line_height = self.font_size * 2
         col_width = [110, 30, 20] 
 
         headers = df.columns.tolist() 
         self.set_fill_color(240, 240, 240)
         
-        # Заголовок таблиці
+        # Заголовок
         for i, h in enumerate(headers):
             w = col_width[i] if i < len(col_width) else 20
             self.cell(w, line_height, str(h), border=1, fill=True, align='C')
         self.ln(line_height)
 
-        # Рядки таблиці
+        # Дані
         for row in df.itertuples(index=False):
             x_start = self.get_x()
             y_start = self.get_y()
@@ -76,30 +106,25 @@ class PDFReport(FPDF):
             count_val = str(row[1])
             perc_val = str(row[2])
 
-            # 1. Текстова комірка (може бути багаторядковою)
+            # Текст (багаторядковий)
             self.multi_cell(col_width[0], line_height, text_val, border=1, align='L')
             
-            # Визначаємо, де ми опинилися після multi_cell
             x_next = self.get_x()
             y_next = self.get_y()
             h_curr = y_next - y_start
             
-            # Повертаємо курсор наверх для малювання сусідніх комірок
+            # Числа (однорядкові, але висота підганяється під текст)
             self.set_xy(x_start + col_width[0], y_start)
-            
-            # 2. Числові комірки (висота така сама, як у текстової)
             self.cell(col_width[1], h_curr, count_val, border=1, align='C')
             self.cell(col_width[2], h_curr, perc_val, border=1, align='C')
             
-            # Перехід на новий рядок (на позицію під найвищою коміркою)
+            # Повертаємось на початок нового рядка
             self.set_xy(x_start, y_next)
-            # self.ln() не потрібен, бо ми вже на правильному Y
 
     def add_chart(self, qs: QuestionSummary):
         if qs.table.empty:
             return
 
-        # Створення графіку
         plt.figure(figsize=(6, 3))
         labels = qs.table["Варіант відповіді"]
         values = qs.table["Кількість"]
@@ -107,7 +132,6 @@ class PDFReport(FPDF):
         if qs.question.qtype == QuestionType.SCALE:
             bars = plt.bar(labels, values, color='#4F81BD')
             plt.ylabel('Кількість')
-            # Підписи значень
             for bar in bars:
                 height = bar.get_height()
                 plt.text(bar.get_x() + bar.get_width()/2., height,
@@ -120,50 +144,22 @@ class PDFReport(FPDF):
 
         plt.tight_layout()
 
-        # Збереження у тимчасовий файл
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_img:
             plt.savefig(tmp_img.name, format='png', dpi=100)
             tmp_img_path = tmp_img.name
         
         plt.close()
 
-        # Перевірка місця на сторінці
         if self.get_y() > 200:
             self.add_page()
             
         self.image(tmp_img_path, w=150)
         self.ln(5)
         
-        # Видалення файлу
         try:
             os.remove(tmp_img_path)
         except:
             pass
-
-def ensure_font_exists():
-    """Завантажує шрифт, якщо його немає або файл пошкоджено."""
-    font_path = "DejaVuSans.ttf"
-    
-    # Видаляємо, якщо файл надто малий (помилка завантаження)
-    if os.path.exists(font_path):
-        if os.path.getsize(font_path) < 10000:
-            try:
-                os.remove(font_path)
-            except:
-                pass
-
-    if not os.path.exists(font_path):
-        try:
-            headers = {'User-Agent': 'Mozilla/5.0'}
-            response = requests.get(FONT_URL, headers=headers)
-            response.raise_for_status()
-            with open(font_path, "wb") as f:
-                f.write(response.content)
-        except Exception as e:
-            print(f"Font download error: {e}")
-            return None
-            
-    return font_path
 
 def build_pdf_report(
     original_df: pd.DataFrame,
@@ -172,23 +168,28 @@ def build_pdf_report(
     range_info: str
 ) -> bytes:
     
-    font_path = ensure_font_exists()
+    # 1. Отримуємо шлях до шрифту
+    font_path = get_font_path()
     
-    # Ініціалізація PDF
+    # Якщо шрифт не знайдено, ми не можемо генерувати PDF з кирилицею.
+    # Створюємо PDF з помилкою (англійською, щоб не впало).
+    if not font_path:
+        err_pdf = FPDF()
+        err_pdf.add_page()
+        err_pdf.set_font("Helvetica", size=12)
+        err_pdf.multi_cell(0, 10, "CRITICAL ERROR: Cyrillic font (DejaVuSans) not found on server.\nCannot generate report.")
+        return bytes(err_pdf.output())
+
+    # 2. Генеруємо нормальний звіт
     pdf = PDFReport(font_path)
     pdf.add_page()
 
-    # --- Титульна сторінка ---
-    font_name = FONT_NAME if font_path else "Arial"
-    pdf.set_font(font_name, "", 16)
-    
-    # Використовуємо .encode('latin-1', 'replace') для заголовків тільки якщо немає шрифту,
-    # але оскільки ми використовуємо unicode=True в fpdf2, encode не потрібен для тексту методу cell/multi_cell.
-    
+    # Титулка
+    pdf.set_font(FONT_NAME, "", 16)
     pdf.cell(0, 10, "Звіт про результати опитування", ln=True, align='C')
     pdf.ln(10)
 
-    pdf.set_font(font_name, "", 12)
+    pdf.set_font(FONT_NAME, "", 12)
     pdf.cell(0, 10, f"Всього анкет: {len(original_df)}", ln=True)
     pdf.cell(0, 10, f"Оброблено анкет: {len(sliced_df)}", ln=True)
     pdf.cell(0, 10, f"Діапазон: {range_info}", ln=True)
@@ -196,7 +197,7 @@ def build_pdf_report(
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(10)
 
-    # --- Основний контент ---
+    # Цикл по питаннях
     for qs in summaries:
         if pdf.get_y() > 250:
             pdf.add_page()
@@ -205,7 +206,7 @@ def build_pdf_report(
         pdf.chapter_title(title)
 
         if qs.table.empty:
-            pdf.set_font(font_name, "", 10)
+            pdf.set_font(FONT_NAME, "", 10)
             pdf.cell(0, 10, "Немає даних або відкриті відповіді.", ln=True)
             pdf.ln(5)
             continue
@@ -213,11 +214,10 @@ def build_pdf_report(
         try:
             pdf.add_table(qs.table)
         except Exception as e:
-            pdf.cell(0, 10, f"Table error: {str(e)}", ln=True)
+            pdf.cell(0, 10, f"Table Error: {e}", ln=True)
 
         pdf.ln(5)
         
-        # Якщо мало місця для графіка - нова сторінка
         if pdf.get_y() > 180:
             pdf.add_page()
             
@@ -228,6 +228,4 @@ def build_pdf_report(
 
         pdf.ln(10)
 
-    # ВАЖЛИВО: fpdf2.output() повертає bytearray. Конвертуємо в bytes.
-    # .encode() не потрібен.
     return bytes(pdf.output())
