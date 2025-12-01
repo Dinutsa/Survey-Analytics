@@ -75,6 +75,13 @@ def build_excel_report(
                 header=True,
             )
             row += len(qs.table) + 2  # відступ між блоками
+        chart = workbook.add_chart({'type': 'pie'})
+        chart.add_series({
+            'name':       [sheet_name, 0, 0],  # Назва діаграми
+            'categories': [sheet_name, 1, 0, 5, 0],  # Діапазон підписів
+            'values':     [sheet_name, 1, 1, 5, 1],  # Діапазон значень
+            })
+        ws.insert_chart('E2', chart)
 
     output.seek(0)
     return output.read()
