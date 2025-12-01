@@ -1,8 +1,9 @@
 """
 Модуль експорту звіту у форматі PDF.
-Фінальні правки:
-- Агресивний контроль розриву сторінок для таблиць (щоб не рвало Q14).
-- Різні розміри для діаграм: стовпчикові - компактні по висоті, кругові - високі.
+Фінальні покращення:
+- "Хірургічно точний" розрахунок висоти рядків таблиці (симуляція переносу слів).
+- Компактні стовпчикові діаграми (висота 3.8 дюйма).
+- Високі кругові діаграми з легендою знизу.
 """
 
 import io
@@ -77,7 +78,6 @@ class PDFReport(FPDF):
         self.set_text_color(0, 0, 0)
 
     def chapter_title(self, text):
-        # Якщо ми нижче 240мм, краще почати нову сторінку для заголовка
         if self.get_y() > 240:
             self.add_page()
         self.set_font(FONT_NAME, "", 12)
@@ -85,22 +85,48 @@ class PDFReport(FPDF):
         self.multi_cell(0, 8, str(text), fill=True, align='L')
         self.ln(2)
 
-    def calculate_row_height(self, text_val, col_width, line_height):
+    def get_real_lines_count(self, text_val, col_width_mm):
         """
-        Розрахунок висоти рядка.
-        ВИПРАВЛЕНО: Дільник 35. Це дуже консервативно. 
-        Скрипт буде думати, що рядок довший, і переноситиме раніше.
+        Точний розрахунок кількості рядків, яку займе текст у комірці.
+        Використовує get_string_width для симуляції переносу слів.
         """
-        text_len = len(str(text_val))
-        chars_per_line = 35 
+        if not str(text_val):
+            return 1
+            
+        # Ефективна ширина (ширина колонки мінус внутрішні відступи ~2-3мм)
+        effective_width = col_width_mm - 4 
         
-        lines_count = math.ceil(text_len / chars_per_line)
-        if lines_count < 1: lines_count = 1
+        # Розбиваємо на явні абзаци
+        paragraphs = str(text_val).split('\n')
+        total_lines = 0
         
-        newlines = str(text_val).count('\n')
-        lines_count += newlines
+        # Ширина пробілу
+        space_w = self.get_string_width(' ')
         
-        return lines_count * line_height
+        for p in paragraphs:
+            if not p:
+                total_lines += 1
+                continue
+                
+            words = p.split(' ')
+            current_line_w = 0
+            lines_in_paragraph = 1
+            
+            for word in words:
+                word_w = self.get_string_width(word)
+                
+                # Якщо слово довше за рядок (рідко, але буває), воно розірветься
+                # Тут спрощено: вважаємо, що воно додається до рядка
+                if current_line_w + word_w > effective_width:
+                    # Перенос на новий рядок
+                    lines_in_paragraph += 1
+                    current_line_w = word_w + space_w
+                else:
+                    current_line_w += word_w + space_w
+            
+            total_lines += lines_in_paragraph
+            
+        return total_lines
 
     def add_table(self, df: pd.DataFrame):
         self.set_font(FONT_NAME, "", 10)
@@ -108,25 +134,29 @@ class PDFReport(FPDF):
         col_width = [110, 30, 20] 
         headers = df.columns.tolist()
 
-        # Розрахунок повної висоти
-        total_table_height = line_height 
+        # 1. Точний розрахунок висоти кожного рядка
         row_heights = []
+        total_table_height = line_height # шапка
+        
         for row in df.itertuples(index=False):
             text_val = str(row[0])
-            h = self.calculate_row_height(text_val, col_width[0], line_height)
+            # Використовуємо нову точну функцію
+            n_lines = self.get_real_lines_count(text_val, col_width[0])
+            h = n_lines * line_height
             row_heights.append(h)
             total_table_height += h
 
-        # ВИПРАВЛЕНО: Поріг 250 (залишаємо 47мм знизу порожніми для безпеки)
-        page_break_trigger = 250 
-        space_left = page_break_trigger - self.get_y()
-
-        # Якщо таблиця середня і не влазить -> нова сторінка
+        # 2. Логіка переносу таблиці
+        # Якщо таблиця середня (до 230мм) і не влазить -> переносимо всю
+        page_limit = 275
+        space_left = page_limit - self.get_y()
+        
         if total_table_height < 230 and total_table_height > space_left:
             self.add_page()
 
-        # Шапка
+        # 3. Друк
         self.set_fill_color(240, 240, 240)
+        # Шапка
         for i, h in enumerate(headers):
             w = col_width[i] if i < len(col_width) else 20
             self.cell(w, line_height, str(h), border=1, fill=True, align='C')
@@ -140,9 +170,10 @@ class PDFReport(FPDF):
             
             curr_h = row_heights[idx]
 
-            # Перевірка на розрив
-            if self.get_y() + curr_h > page_break_trigger:
+            # Перевірка: чи влізе цей КОНКРЕТНИЙ рядок?
+            if self.get_y() + curr_h > page_limit:
                 self.add_page()
+                # Дублюємо шапку
                 for i, h in enumerate(headers):
                     w = col_width[i] if i < len(col_width) else 20
                     self.cell(w, line_height, str(h), border=1, fill=True, align='C')
@@ -151,11 +182,14 @@ class PDFReport(FPDF):
             x_start = self.get_x()
             y_start = self.get_y()
 
+            # Текст
             self.multi_cell(col_width[0], line_height, text_val, border=1, align='L')
             
             x_next = self.get_x()
             y_next = self.get_y()
             h_real = y_next - y_start 
+            
+            # Страховка: якщо раптом реальна висота більша за розрахункову
             final_h = max(h_real, curr_h)
 
             self.set_xy(x_start + col_width[0], y_start)
@@ -168,10 +202,9 @@ class PDFReport(FPDF):
         if qs.table.empty:
             return
 
-        # Перевірка місця. 
-        # Якщо це стовпчикова - їй треба менше місця (~120мм по Y), круговій ~180мм
-        space_needed = 120 if qs.question.qtype == QuestionType.SCALE else 180
-        if self.get_y() > (280 - space_needed/2): # Груба оцінка
+        # Різні вимоги до місця
+        space_needed = 110 if qs.question.qtype == QuestionType.SCALE else 170
+        if self.get_y() > (280 - space_needed/2):
              self.add_page()
 
         plt.rcParams.update({'font.size': FONT_SIZE_BASE}) 
@@ -180,10 +213,10 @@ class PDFReport(FPDF):
         values = qs.table["Кількість"]
         wrapped_labels = [textwrap.fill(l, 40) for l in labels]
 
-        # ВИПРАВЛЕНО: Розділення розмірів
         if qs.question.qtype == QuestionType.SCALE:
-            # --- СТОВПЧИКОВА: НИЗЬКА ---
-            plt.figure(figsize=(10, 4.5)) # Ширина 10, Висота 4.5 (компактна)
+            # --- СТОВПЧИКОВА: ЩЕ НИЖЧА ---
+            # figsize=(10, 3.8) робить їх дуже акуратними
+            plt.figure(figsize=(10, 3.8)) 
             
             bars = plt.bar(wrapped_labels, values, color='#4F81BD', width=BAR_WIDTH)
             plt.ylabel('Кількість')
@@ -196,7 +229,7 @@ class PDFReport(FPDF):
                          f'{int(height)}', ha='center', va='bottom', fontweight='bold')
         else:
             # --- КРУГОВА: ВИСОКА ---
-            plt.figure(figsize=(10, 7)) # Ширина 10, Висота 7 (для легенди)
+            plt.figure(figsize=(10, 7))
             
             colors = ['#4F81BD', '#C0504D', '#9BBB59', '#8064A2', '#4BACC6', '#F79646']
             c_arg = colors[:len(values)] if len(values) <= len(colors) else None
