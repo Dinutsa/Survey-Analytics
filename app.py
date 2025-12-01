@@ -215,9 +215,9 @@ def main():
 
     # Кнопка reset очищує лише обробку (або можна змінити, щоб очищати і файли)
     if reset_button:
-        clear_processing_state(keep_files=True)
+        clear_processing_state(keep_files=False)
         st.success("Обробку скинуто. Можна обрати новий діапазон або завантажити інші файли.")
-        st.experimental_rerun()
+        st.rerun()
 
     # --- Після успішної обробки показуємо результати ---
     if st.session_state.processed:
