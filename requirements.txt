@@ -4,3 +4,6 @@ openpyxl
 xlsxwriter
 numpy
 streamlit
+fpdf2
+matplotlib
+requests
