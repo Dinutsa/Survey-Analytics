@@ -187,7 +187,7 @@ def build_pptx_report(
                 
                 # Заливка (Біла)
                 cell.fill.solid()
-                cell.fill.fore_color.rgb = RGBColor(255, 255, 255)
+                cell.fill.fore_color.rgb = RGBColor(220, 220, 220)
 
         # --- ДІАГРАМА ---
         try:
