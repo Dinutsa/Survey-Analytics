@@ -7,3 +7,4 @@ streamlit
 fpdf2
 matplotlib
 requests
+python-docx
