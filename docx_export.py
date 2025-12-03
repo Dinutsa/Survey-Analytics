@@ -98,8 +98,8 @@ def build_docx_report(
     # --- 1. Налаштування стилів ---
     # Базовий шрифт
     style = doc.styles['Normal']
-    style.font.name = 'Arial'
-    style.font.size = Pt(11)
+    style.font.name = 'Times New Roman'
+    style.font.size = Pt(14)
 
     # --- 2. Титульна сторінка ---
     title = doc.add_heading('Звіт про результати опитування', 0)
