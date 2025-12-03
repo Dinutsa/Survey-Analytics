@@ -1,9 +1,8 @@
 """
 Модуль експорту звіту у формат PowerPoint (.pptx).
-Версія: "Класична".
-- Таблиці створюються стандартним методом (без примусових рамок XML).
-- Збережено підтримку фонового зображення.
-- Збережено великі шрифти.
+ВЕРСІЯ: "Бронебійна" (Hardcoded XML).
+- Примусове встановлення фону на всі макети (щоб білий колір не перекривав картинку).
+- XML-функція для рамок переписана для максимальної сумісності.
 """
 
 import io
@@ -16,6 +15,10 @@ from pptx.util import Inches, Pt
 from pptx.enum.text import PP_ALIGN
 from pptx.dml.color import RGBColor
 
+# --- ІМПОРТИ ДЛЯ XML ---
+from pptx.oxml.xmlchemy import OxmlElement
+from pptx.oxml.ns import qn
+
 from classification import QuestionInfo, QuestionType
 from summary import QuestionSummary
 from typing import List, Optional
@@ -27,6 +30,47 @@ FONT_SIZE_TABLE_HEADER = 12
 FONT_SIZE_TABLE_DATA = 11
 BAR_WIDTH = 0.6
 
+# --- ФУНКЦІЇ ДЛЯ РАМОК (XML) ---
+
+def SubElement(parent, tagname, **kwargs):
+    element = OxmlElement(tagname)
+    element.attrib.update(kwargs)
+    parent.append(element)
+    return element
+
+def _set_cell_border(cell, border_color="000000", border_width='12700'):
+    """
+    Низькорівнева функція для малювання меж клітинки через XML.
+    border_width: 12700 = 1pt.
+    """
+    tc = cell._tc
+    tcPr = tc.get_or_add_tcPr()
+    
+    # Визначаємо теги для чотирьох сторін
+    lines = ['a:lnL', 'a:lnR', 'a:lnT', 'a:lnB']
+    
+    for line in lines:
+        # Шукаємо існуючу лінію, якщо є - видаляємо (щоб не було дублікатів)
+        existing = tcPr.find(qn(line))
+        if existing is not None:
+            tcPr.remove(existing)
+        
+        # Створюємо нову лінію
+        ln = SubElement(tcPr, line, w=border_width, cap='flat', cmpd='sng', algn='ctr')
+        
+        # Колір лінії
+        solidFill = SubElement(ln, 'a:solidFill')
+        srgbClr = SubElement(solidFill, 'a:srgbClr', val=border_color)
+        
+        # Тип лінії
+        prstDash = SubElement(ln, 'a:prstDash', val='solid')
+        
+        # Додаткові налаштування
+        SubElement(ln, 'a:round')
+        SubElement(ln, 'a:headEnd', type='none', w='med', len='med')
+        SubElement(ln, 'a:tailEnd', type='none', w='med', len='med')
+
+# --- ГЕНЕРАЦІЯ ДІАГРАМ ---
 def create_chart_image(qs: QuestionSummary) -> io.BytesIO:
     plt.clf()
     plt.rcParams.update({'font.size': FONT_SIZE_CHART})
@@ -40,8 +84,7 @@ def create_chart_image(qs: QuestionSummary) -> io.BytesIO:
         bars = plt.bar(wrapped_labels, values, color='#4F81BD', width=BAR_WIDTH)
         plt.ylabel('Кількість')
         plt.grid(axis='y', linestyle='--', alpha=0.5)
-        plt.xticks(rotation=0, fontsize=FONT_SIZE_CHART)
-        plt.yticks(fontsize=FONT_SIZE_CHART)
+        plt.xticks(rotation=0)
         
         for bar in bars:
             height = bar.get_height()
@@ -86,11 +129,18 @@ def build_pptx_report(
     
     prs = Presentation()
 
-    # --- ВСТАНОВЛЕННЯ ФОНУ ---
+    # --- ВСТАНОВЛЕННЯ ФОНУ (АГРЕСИВНО) ---
     if background_image_path and os.path.exists(background_image_path):
+        # 1. Для всіх майстер-слайдів
         for master in prs.slide_masters:
             try:
                 master.background.fill.user_picture(background_image_path)
+                # 2. ВАЖЛИВО: Для кожного макету в майстрі теж!
+                # Часто макети мають свій фон, який перекриває майстер.
+                for layout in master.slide_layouts:
+                    try:
+                        layout.background.fill.user_picture(background_image_path)
+                    except: pass
             except: pass
 
     # 1. Титульний
@@ -154,7 +204,7 @@ def build_pptx_report(
         table_shape = slide.shapes.add_table(rows, cols, left, top, width, height)
         table = table_shape.table
 
-        # Ширина колонок
+        # Ширини
         table.columns[0].width = Inches(2.5)
         table.columns[1].width = Inches(1.0)
         table.columns[2].width = Inches(1.0)
@@ -166,10 +216,13 @@ def build_pptx_report(
             cell.text_frame.paragraphs[0].font.bold = True
             cell.text_frame.paragraphs[0].font.size = Pt(FONT_SIZE_TABLE_HEADER)
             
-            # Стиль заголовка: Світло-сірий фон
+            # Стиль заголовка
             cell.fill.solid()
             cell.fill.fore_color.rgb = RGBColor(230, 230, 230)
             cell.text_frame.paragraphs[0].font.color.rgb = RGBColor(0, 0, 0)
+            
+            # --- РАМКИ ЗАГОЛОВКА ---
+            _set_cell_border(cell, border_width='12700') # 1pt
 
         for i, row in enumerate(qs.table.itertuples(index=False)):
             # Варіант
@@ -177,6 +230,7 @@ def build_pptx_report(
             cell.text = str(row[0])
             cell.text_frame.paragraphs[0].font.size = Pt(FONT_SIZE_TABLE_DATA)
             cell.fill.solid(); cell.fill.fore_color.rgb = RGBColor(255, 255, 255)
+            _set_cell_border(cell) # РАМКА
             
             # Кільк.
             cell = table.cell(i+1, 1)
@@ -184,6 +238,7 @@ def build_pptx_report(
             cell.text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER
             cell.text_frame.paragraphs[0].font.size = Pt(FONT_SIZE_TABLE_DATA)
             cell.fill.solid(); cell.fill.fore_color.rgb = RGBColor(255, 255, 255)
+            _set_cell_border(cell) # РАМКА
             
             # %
             cell = table.cell(i+1, 2)
@@ -191,6 +246,7 @@ def build_pptx_report(
             cell.text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER
             cell.text_frame.paragraphs[0].font.size = Pt(FONT_SIZE_TABLE_DATA)
             cell.fill.solid(); cell.fill.fore_color.rgb = RGBColor(255, 255, 255)
+            _set_cell_border(cell) # РАМКА
 
         # --- ДІАГРАМА ---
         try:
