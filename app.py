@@ -284,59 +284,40 @@ def main():
         st.subheader("Експорт результатів")
         range_info = f"Рядки {st.session_state.from_row}–{st.session_state.to_row} (усього {len(sliced)} анкет)"
         
-        custom_topic = st.text_input("Тема презентації (для титульного слайда)", value="Звіт про результати опитування")
-        # --- Кешовані функції ---
         # Створюємо 3 колонки для кнопок
-        @st.cache_data(show_spinner="Генеруємо PowerPoint...")
-        def get_pptx_data(_original_df, _sliced_df, _summaries, _range_info, _topic):
-            return build_pptx_report(_original_df, _sliced_df, _summaries, _range_info, report_title=_topic)
-
-        @st.cache_data(show_spinner="Генеруємо Excel...")
-        def get_excel_data(_original_df, _sliced_df, _qinfo, _summaries, _range_info):
-            return build_excel_report(_original_df, _sliced_df, _qinfo, _summaries, _range_info)
-
-        @st.cache_data(show_spinner="Генеруємо PDF...")
-        def get_pdf_data(_original_df, _sliced_df, _summaries, _range_info):
-            return build_pdf_report(_original_df, _sliced_df, _summaries, _range_info)
-
-        @st.cache_data(show_spinner="Генеруємо DOCX...")
-        def get_docx_data(_original_df, _sliced_df, _summaries, _range_info):
-            return build_docx_report(_original_df, _sliced_df, _summaries, _range_info)
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            if st.button("📊 Excel звіт"):
-                with st.spinner("Генеруємо Excel..."):
-                    try:
-                        excel_bytes = get_excel_data(
-                            st.session_state.ld.df,
-                            st.session_state.sliced,
-                            st.session_state.qinfo,
-                            st.session_state.summaries,
-                            range_info
-                        )
-                        st.download_button(
-                            label="📥 Завантажити Excel",
-                            data=excel_bytes,
-                            file_name="survey_results.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        )
-                    except Exception as e:
-                        st.error(f"Error: {e}")
+            # EXCEL
+            report_bytes_xlsx = build_excel_report(
+                original_df=st.session_state.ld.df,
+                sliced_df=st.session_state.sliced,
+                qinfo=st.session_state.qinfo,
+                summaries=st.session_state.summaries,
+                range_info=range_info,
+            )
+            st.download_button(
+                label="📥 Excel звіт",
+                data=report_bytes_xlsx,
+                file_name="survey_results.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
 
         with col2:
+            # PDF
             if st.button("📄 PDF звіт"):
                 with st.spinner("Генеруємо PDF..."):
                     try:
-                        pdf_bytes = get_pdf_data(
-                            st.session_state.ld.df,
-                            st.session_state.sliced,
-                            st.session_state.summaries,
-                            range_info
+                        from pdf_export import build_pdf_report # lazy import
+                        report_bytes_pdf = build_pdf_report(
+                            original_df=st.session_state.ld.df,
+                            sliced_df=st.session_state.sliced,
+                            summaries=st.session_state.summaries,
+                            range_info=range_info,
                         )
                         st.download_button(
                             label="📥 Завантажити PDF",
-                            data=pdf_bytes,
+                            data=report_bytes_pdf,
                             file_name="survey_results.pdf",
                             mime="application/pdf",
                         )
@@ -344,44 +325,44 @@ def main():
                         st.error(f"Error: {e}")
 
         with col3:
+            # WORD (DOCX)
             if st.button("📝 Word звіт"):
                 with st.spinner("Генеруємо DOCX..."):
                     try:
-                        docx_bytes = get_docx_data(
-                            st.session_state.ld.df,
-                            st.session_state.sliced,
-                            st.session_state.summaries,
-                            range_info
+                        report_bytes_docx = build_docx_report(
+                            original_df=st.session_state.ld.df,
+                            sliced_df=st.session_state.sliced,
+                            summaries=st.session_state.summaries,
+                            range_info=range_info,
                         )
                         st.download_button(
                             label="📥 Завантажити Word",
-                            data=docx_bytes,
+                            data=report_bytes_docx,
                             file_name="survey_results.docx",
                             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                         )
                     except Exception as e:
-                         st.error(f"Error: {e}")
-
+                         st.error(f"Error DOCX: {e}")
+                
         with col4:
-            # Тут передаємо custom_topic
+            # PPTX
             if st.button("🖥️ PPTX звіт"):
                 with st.spinner("Генеруємо PowerPoint..."):
                     try:
-                        pptx_bytes = get_pptx_data(
-                            st.session_state.ld.df,
-                            st.session_state.sliced,
-                            st.session_state.summaries,
-                            range_info,
-                            _topic=custom_topic  # Передача теми
+                        report_bytes_pptx = build_pptx_report(
+                            original_df=st.session_state.ld.df,
+                            sliced_df=st.session_state.sliced,
+                            summaries=st.session_state.summaries,
+                            range_info=range_info,
                         )
                         st.download_button(
                             label="📥 Завантажити PPTX",
-                            data=pptx_bytes,
+                            data=report_bytes_pptx,
                             file_name="survey_results.pptx",
                             mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
                         )
                     except Exception as e:
-                        st.error(f"Error: {e}")
+                        st.error(f"Error PPTX: {e}")
 
 if __name__ == "__main__":
     main()
