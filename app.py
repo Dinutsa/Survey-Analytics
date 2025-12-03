@@ -24,6 +24,7 @@ from classification import classify_questions, QuestionType
 from summary import build_all_summaries
 from excel_export import build_excel_report
 from pdf_export import build_pdf_report
+from docx_export import build_docx_report
 
 st.set_page_config(
     page_title="Обробка результатів студентських опитувань",
@@ -279,11 +280,11 @@ def main():
                 st.dataframe(selected.table)
 
         # --- Експорт звіту ---
-# --- Експорт звіту ---
         st.subheader("Експорт результатів")
         range_info = f"Рядки {st.session_state.from_row}–{st.session_state.to_row} (усього {len(sliced)} анкет)"
         
-        col1, col2 = st.columns(2)
+        # Створюємо 3 колонки для кнопок
+        col1, col2, col3 = st.columns(3)
         
         with col1:
             # EXCEL
@@ -295,7 +296,7 @@ def main():
                 range_info=range_info,
             )
             st.download_button(
-                label="📥 Завантажити звіт (Excel)",
+                label="📥 Excel звіт",
                 data=report_bytes_xlsx,
                 file_name="survey_results.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -303,10 +304,10 @@ def main():
 
         with col2:
             # PDF
-            # Генеруємо PDF тільки при натисканні (може зайняти пару секунд)
-            if st.button("📄 Згенерувати PDF-звіт"):
-                with st.spinner("Генеруємо PDF-документ (це може зайняти час)..."):
+            if st.button("📄 PDF звіт"):
+                with st.spinner("Генеруємо PDF..."):
                     try:
+                        from pdf_export import build_pdf_report # lazy import
                         report_bytes_pdf = build_pdf_report(
                             original_df=st.session_state.ld.df,
                             sliced_df=st.session_state.sliced,
@@ -320,7 +321,28 @@ def main():
                             mime="application/pdf",
                         )
                     except Exception as e:
-                        st.error(f"Помилка створення PDF: {e}")
+                        st.error(f"Error: {e}")
+
+        with col3:
+            # WORD (DOCX)
+            # Генеруємо Word
+            if st.button("📝 Word звіт"):
+                with st.spinner("Генеруємо DOCX..."):
+                    try:
+                        report_bytes_docx = build_docx_report(
+                            original_df=st.session_state.ld.df,
+                            sliced_df=st.session_state.sliced,
+                            summaries=st.session_state.summaries,
+                            range_info=range_info,
+                        )
+                        st.download_button(
+                            label="📥 Завантажити Word",
+                            data=report_bytes_docx,
+                            file_name="survey_results.docx",
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        )
+                    except Exception as e:
+                         st.error(f"Error DOCX: {e}")
 
 if __name__ == "__main__":
     main()
