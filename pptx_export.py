@@ -1,9 +1,13 @@
 """
 Модуль експорту звіту у формат PowerPoint (.pptx).
-Оновлено: Виправлено помилку з аргументами, підтримка шаблонів та заголовків.
+Оновлено: 
+- Прибрано користувацькі шаблони.
+- Додано автоматичне встановлення фонового зображення (background.png) для всіх слайдів.
+- Стандартний заголовок.
 """
 
 import io
+import os
 import textwrap
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -72,17 +76,19 @@ def build_pptx_report(
     sliced_df: pd.DataFrame,
     summaries: List[QuestionSummary],
     range_info: str,
-    report_title: str = "Звіт про результати опитування", # <-- АРГУМЕНТ Є ТУТ
-    template_file: Optional[io.BytesIO] = None            # <-- І ТУТ
+    background_image_path: Optional[str] = "background.png" # Шлях до картинки
 ) -> bytes:
     
-    if template_file:
+    prs = Presentation()
+
+    # --- ВСТАНОВЛЕННЯ ФОНУ ---
+    # Якщо файл існує, ставимо його фоном для Майстер-слайду (це вплине на всі макети)
+    if background_image_path and os.path.exists(background_image_path):
         try:
-            prs = Presentation(template_file)
-        except:
-            prs = Presentation()
-    else:
-        prs = Presentation()
+            slide_master = prs.slide_master
+            slide_master.background.fill.user_picture(background_image_path)
+        except Exception as e:
+            print(f"Не вдалося встановити фон: {e}")
 
     # 1. Титульний
     try: slide_layout = prs.slide_layouts[0]
@@ -91,7 +97,7 @@ def build_pptx_report(
     
     try:
         title = slide.shapes.title
-        title.text = report_title
+        title.text = "Звіт про результати опитування" # Стандартний заголовок
     except: pass
     
     try:
@@ -141,13 +147,21 @@ def build_pptx_report(
             cell.text = h
             cell.text_frame.paragraphs[0].font.bold = True
             cell.text_frame.paragraphs[0].font.size = Pt(11)
+            # Якщо фон темний, можливо, треба зробити таблицю напівпрозорою або білою
+            # Тут ставимо білу заливку, щоб читалось на будь-якому фоні
             cell.fill.solid()
-            cell.fill.fore_color.rgb = RGBColor(240, 240, 240)
+            cell.fill.fore_color.rgb = RGBColor(255, 255, 255) 
 
         for i, row in enumerate(qs.table.itertuples(index=False)):
             cell = table.cell(i+1, 0); cell.text = str(row[0]); cell.text_frame.paragraphs[0].font.size = Pt(10)
+            # Заливка даних теж біла, щоб не зливались з картинкою фону
+            cell.fill.solid(); cell.fill.fore_color.rgb = RGBColor(255, 255, 255)
+            
             cell = table.cell(i+1, 1); cell.text = str(row[1]); cell.text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER; cell.text_frame.paragraphs[0].font.size = Pt(10)
+            cell.fill.solid(); cell.fill.fore_color.rgb = RGBColor(255, 255, 255)
+            
             cell = table.cell(i+1, 2); cell.text = str(row[2]); cell.text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER; cell.text_frame.paragraphs[0].font.size = Pt(10)
+            cell.fill.solid(); cell.fill.fore_color.rgb = RGBColor(255, 255, 255)
 
         try:
             img_stream = create_chart_image(qs)
