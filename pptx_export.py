@@ -1,6 +1,6 @@
 """
 Модуль експорту звіту у формат PowerPoint (.pptx).
-Оновлено: Підтримка користувацьких шаблонів дизайну та налаштування заголовка.
+Оновлено: Виправлено помилку з аргументами, підтримка шаблонів та заголовків.
 """
 
 import io
@@ -28,25 +28,18 @@ def create_chart_image(qs: QuestionSummary) -> io.BytesIO:
     
     labels = qs.table["Варіант відповіді"].astype(str).tolist()
     values = qs.table["Кількість"]
-    
-    # Перенос тексту для підписів, щоб не були надто довгими
     wrapped_labels = [textwrap.fill(l, 30) for l in labels]
 
-    # --- 1. СТОВПЧИКОВА ДІАГРАМА ---
     if qs.question.qtype == QuestionType.SCALE:
         fig = plt.figure(figsize=(5.5, 4.0))
         bars = plt.bar(wrapped_labels, values, color='#4F81BD', width=BAR_WIDTH)
         plt.ylabel('Кількість')
         plt.grid(axis='y', linestyle='--', alpha=0.5)
         plt.xticks(rotation=0)
-        
-        # Числа над стовпчиками
         for bar in bars:
             height = bar.get_height()
             plt.text(bar.get_x() + bar.get_width()/2., height + 0.1,
                      f'{int(height)}', ha='center', va='bottom', fontweight='bold')
-
-    # --- 2. КРУГОВА ДІАГРАМА ---
     else:
         fig = plt.figure(figsize=(5.5, 4.5))
         colors = ['#4F81BD', '#C0504D', '#9BBB59', '#8064A2', '#4BACC6', '#F79646']
@@ -57,8 +50,6 @@ def create_chart_image(qs: QuestionSummary) -> io.BytesIO:
             pctdistance=0.8, colors=c_arg, radius=1.1,
             textprops={'fontsize': FONT_SIZE_BASE}
         )
-        
-        # Стилізація відсотків
         for autotext in autotexts:
             autotext.set_color('white')
             autotext.set_weight('bold')
@@ -66,14 +57,10 @@ def create_chart_image(qs: QuestionSummary) -> io.BytesIO:
             autotext.set_path_effects([path_effects.withStroke(linewidth=2, foreground='#333333')])
 
         plt.axis('equal')
-        
-        # Легенда знизу
         cols = 2 if len(labels) > 2 else 1
         plt.legend(wrapped_labels, loc="upper center", bbox_to_anchor=(0.5, 0.0), ncol=cols, frameon=False, fontsize=9)
 
     plt.tight_layout()
-    
-    # Збереження в потік
     img_stream = io.BytesIO()
     plt.savefig(img_stream, format='png', dpi=CHART_DPI, bbox_inches='tight')
     plt.close(fig)
@@ -85,149 +72,89 @@ def build_pptx_report(
     sliced_df: pd.DataFrame,
     summaries: List[QuestionSummary],
     range_info: str,
-    report_title: str = "Звіт про результати опитування",
-    template_file: Optional[io.BytesIO] = None
+    report_title: str = "Звіт про результати опитування", # <-- АРГУМЕНТ Є ТУТ
+    template_file: Optional[io.BytesIO] = None            # <-- І ТУТ
 ) -> bytes:
-    """
-    Створює презентацію PowerPoint.
-    Якщо передано template_file, використовує його як основу.
-    """
     
-    # 1. Завантаження шаблону або створення нової презентації
     if template_file:
         try:
             prs = Presentation(template_file)
-        except Exception:
-            # Якщо шаблон битий, створюємо пусту
+        except:
             prs = Presentation()
     else:
         prs = Presentation()
 
-    # --- СЛАЙД 1: ТИТУЛЬНИЙ ---
-    # Layout 0 = Title Slide
-    try: 
-        slide_layout = prs.slide_layouts[0]
-    except: 
-        slide_layout = prs.slide_layouts[0]
-        
+    # 1. Титульний
+    try: slide_layout = prs.slide_layouts[0]
+    except: slide_layout = prs.slide_layouts[0]
     slide = prs.slides.add_slide(slide_layout)
     
-    # Заповнення заголовка
     try:
         title = slide.shapes.title
         title.text = report_title
     except: pass
     
-    # Заповнення підзаголовка
     try:
         if len(slide.placeholders) > 1:
             subtitle = slide.placeholders[1]
             subtitle.text = f"Всього анкет: {len(original_df)}\nОброблено: {len(sliced_df)}\n{range_info}"
     except: pass
 
-    # --- СЛАЙД 2: ТЕХНІЧНА ІНФОРМАЦІЯ ---
-    # Layout 1 = Title and Content
+    # 2. Технічний
     try:
         slide_layout = prs.slide_layouts[1] 
         slide = prs.slides.add_slide(slide_layout)
-        
         title = slide.shapes.title
         title.text = "Технічна інформація"
-        
         body_shape = slide.shapes.placeholders[1]
         tf = body_shape.text_frame
         tf.text = "Параметри вибірки:"
-        
         p = tf.add_paragraph(); p.text = f"Загальна кількість респондентів: {len(original_df)}"; p.level = 1
         p = tf.add_paragraph(); p.text = f"Кількість анкет у звіті: {len(sliced_df)}"; p.level = 1
         p = tf.add_paragraph(); p.text = f"Діапазон обробки: {range_info}"; p.level = 1
     except: pass
 
-    # --- СЛАЙДИ З ПИТАННЯМИ ---
-    # Layout 5 = Title Only (порожній знизу, щоб ми вставили таблицю і графік)
-    # Якщо такого layout немає, беремо останній доступний
+    # 3. Питання
     layout_index = 5 if len(prs.slide_layouts) > 5 else len(prs.slide_layouts) - 1
     
     for qs in summaries:
-        if qs.table.empty:
-            continue
-            
+        if qs.table.empty: continue
         slide_layout = prs.slide_layouts[layout_index]
         slide = prs.slides.add_slide(slide_layout)
-        
-        # Заголовок слайда
         try:
             title = slide.shapes.title
             title.text = f"{qs.question.code}. {qs.question.text}"
-            
-            # Авто-зменшення шрифту для довгих питань
             if hasattr(title, 'text_frame'):
-                 if len(title.text) > 60: 
-                     title.text_frame.paragraphs[0].font.size = Pt(24)
-                 else: 
-                     title.text_frame.paragraphs[0].font.size = Pt(32)
+                 if len(title.text) > 60: title.text_frame.paragraphs[0].font.size = Pt(24)
+                 else: title.text_frame.paragraphs[0].font.size = Pt(32)
         except: pass
 
-        # --- ТАБЛИЦЯ (Зліва) ---
-        rows = len(qs.table) + 1
-        cols = 3
-        left = Inches(0.5)
-        top = Inches(2.0)
-        width = Inches(4.5)
-        height = Inches(0.8) # базова висота
-
+        rows = len(qs.table) + 1; cols = 3
+        left = Inches(0.5); top = Inches(2.0); width = Inches(4.5); height = Inches(0.8)
         table_shape = slide.shapes.add_table(rows, cols, left, top, width, height)
         table = table_shape.table
+        table.columns[0].width = Inches(2.5); table.columns[1].width = Inches(1.0); table.columns[2].width = Inches(1.0)
 
-        # Налаштування ширини колонок
-        table.columns[0].width = Inches(2.5) # Варіант
-        table.columns[1].width = Inches(1.0) # Кільк
-        table.columns[2].width = Inches(1.0) # %
-
-        # Хедер
         headers = ["Варіант", "Кільк.", "%"]
         for i, h in enumerate(headers):
             cell = table.cell(0, i)
             cell.text = h
             cell.text_frame.paragraphs[0].font.bold = True
             cell.text_frame.paragraphs[0].font.size = Pt(11)
-            # Заливка заголовка (світло-сіра)
             cell.fill.solid()
             cell.fill.fore_color.rgb = RGBColor(240, 240, 240)
 
-        # Дані таблиці
         for i, row in enumerate(qs.table.itertuples(index=False)):
-            # Варіант
-            cell = table.cell(i+1, 0)
-            cell.text = str(row[0])
-            cell.text_frame.paragraphs[0].font.size = Pt(10)
-            
-            # Кількість
-            cell = table.cell(i+1, 1)
-            cell.text = str(row[1])
-            cell.text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER
-            cell.text_frame.paragraphs[0].font.size = Pt(10)
-            
-            # Відсоток
-            cell = table.cell(i+1, 2)
-            cell.text = str(row[2])
-            cell.text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER
-            cell.text_frame.paragraphs[0].font.size = Pt(10)
+            cell = table.cell(i+1, 0); cell.text = str(row[0]); cell.text_frame.paragraphs[0].font.size = Pt(10)
+            cell = table.cell(i+1, 1); cell.text = str(row[1]); cell.text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER; cell.text_frame.paragraphs[0].font.size = Pt(10)
+            cell = table.cell(i+1, 2); cell.text = str(row[2]); cell.text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER; cell.text_frame.paragraphs[0].font.size = Pt(10)
 
-        # --- ДІАГРАМА (Справа) ---
         try:
             img_stream = create_chart_image(qs)
-            
-            # Позиціонування картинки
-            left_pic = Inches(5.2)
-            top_pic = Inches(2.0)
-            width_pic = Inches(4.5) 
-            
+            left_pic = Inches(5.2); top_pic = Inches(2.0); width_pic = Inches(4.5) 
             slide.shapes.add_picture(img_stream, left_pic, top_pic, width=width_pic)
-        except Exception:
-            pass
+        except: pass
 
-    # Збереження результату
     output = io.BytesIO()
     prs.save(output)
     return output.getvalue()
