@@ -25,6 +25,7 @@ from summary import build_all_summaries
 from excel_export import build_excel_report
 from pdf_export import build_pdf_report
 from docx_export import build_docx_report
+from pptx_export import build_pptx_report
 
 st.set_page_config(
     page_title="Обробка результатів студентських опитувань",
@@ -284,7 +285,7 @@ def main():
         range_info = f"Рядки {st.session_state.from_row}–{st.session_state.to_row} (усього {len(sliced)} анкет)"
         
         # Створюємо 3 колонки для кнопок
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         
         with col1:
             # EXCEL
@@ -325,7 +326,6 @@ def main():
 
         with col3:
             # WORD (DOCX)
-            # Генеруємо Word
             if st.button("📝 Word звіт"):
                 with st.spinner("Генеруємо DOCX..."):
                     try:
@@ -343,6 +343,26 @@ def main():
                         )
                     except Exception as e:
                          st.error(f"Error DOCX: {e}")
+                
+        with col4:
+            # PPTX
+            if st.button("🖥️ PPTX звіт"):
+                with st.spinner("Генеруємо PowerPoint..."):
+                    try:
+                        report_bytes_pptx = build_pptx_report(
+                            original_df=st.session_state.ld.df,
+                            sliced_df=st.session_state.sliced,
+                            summaries=st.session_state.summaries,
+                            range_info=range_info,
+                        )
+                        st.download_button(
+                            label="📥 Завантажити PPTX",
+                            data=report_bytes_pptx,
+                            file_name="survey_results.pptx",
+                            mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                        )
+                    except Exception as e:
+                        st.error(f"Error PPTX: {e}")
 
 if __name__ == "__main__":
     main()
