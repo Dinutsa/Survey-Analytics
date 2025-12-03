@@ -1,12 +1,13 @@
 """
 Модуль експорту звіту у формат PowerPoint (.pptx).
-ВЕРСІЯ: Чиста та Стабільна (Clean & Stable).
-- Без фонових зображень та шаблонів.
-- Примусове малювання чорних рамок таблиць (через XML).
-- Великі шрифти для кращої читабельності.
+ВЕРСІЯ: "Повна сітка" (Full Grid).
+- Примусове малювання меж для КОЖНОЇ сторони КОЖНОЇ клітинки.
+- Підтримка фонового зображення.
+- Великі шрифти.
 """
 
 import io
+import os
 import textwrap
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -15,13 +16,13 @@ from pptx.util import Inches, Pt
 from pptx.enum.text import PP_ALIGN
 from pptx.dml.color import RGBColor
 
-# Імпорти для XML маніпуляцій (рамки таблиць)
+# --- ІМПОРТИ ДЛЯ XML (НЕОБХІДНІ ДЛЯ РАМОК) ---
 from pptx.oxml.xmlchemy import OxmlElement
 from pptx.oxml.ns import qn
 
 from classification import QuestionInfo, QuestionType
 from summary import QuestionSummary
-from typing import List
+from typing import List, Optional
 
 # --- НАЛАШТУВАННЯ ---
 CHART_DPI = 150
@@ -30,36 +31,26 @@ FONT_SIZE_TABLE_HEADER = 12
 FONT_SIZE_TABLE_DATA = 11
 BAR_WIDTH = 0.6
 
-# --- ФУНКЦІЇ ДЛЯ РАМОК (XML Hacks) ---
-
+# --- ФУНКЦІЯ ДЛЯ МАЛЮВАННЯ РАМОК ---
 def SubElement(parent, tagname, **kwargs):
     element = OxmlElement(tagname)
     element.attrib.update(kwargs)
     parent.append(element)
     return element
 
-def set_cell_border(cell, border_color="000000", border_width='12700'):
+def _set_cell_border(cell, border_color="000000", border_width='12700'):
     """
-    Малює рамки навколо клітинки таблиці PowerPoint.
-    12700 EMU = 1pt.
+    Малює рамки з усіх 4 сторін клітинки.
     """
     tc = cell._tc
     tcPr = tc.get_or_add_tcPr()
     
-    # Сторони: Left, Right, Top, Bottom
-    lines = [('a:lnL', border_width), ('a:lnR', border_width), 
-             ('a:lnT', border_width), ('a:lnB', border_width)]
-    
-    for line_tag, w in lines:
-        # Видаляємо стару лінію, якщо є
-        if tcPr.find(qn(line_tag)) is not None:
-            tcPr.remove(tcPr.find(qn(line_tag)))
-        
-        # Створюємо нову
-        ln = SubElement(tcPr, line_tag, w=w, cap='flat', cmpd='sng', algn='ctr')
+    # lnL=Left, lnR=Right, lnT=Top, lnB=Bottom
+    for edge in ['a:lnL', 'a:lnR', 'a:lnT', 'a:lnB']:
+        ln = SubElement(tcPr, edge, w=border_width, cap='flat', cmpd='sng', algn='ctr')
         solidFill = SubElement(ln, 'a:solidFill')
-        srgbClr = SubElement(solidFill, 'a:srgbClr', val=border_color)
-        prstDash = SubElement(ln, 'a:prstDash', val='solid')
+        SubElement(solidFill, 'a:srgbClr', val=border_color)
+        SubElement(ln, 'a:prstDash', val='solid')
         SubElement(ln, 'a:round')
         SubElement(ln, 'a:headEnd', type='none', w='med', len='med')
         SubElement(ln, 'a:tailEnd', type='none', w='med', len='med')
@@ -71,23 +62,19 @@ def create_chart_image(qs: QuestionSummary) -> io.BytesIO:
     
     labels = qs.table["Варіант відповіді"].astype(str).tolist()
     values = qs.table["Кількість"]
-    # Перенос тексту
     wrapped_labels = [textwrap.fill(l, 25) for l in labels]
 
     if qs.question.qtype == QuestionType.SCALE:
-        # Стовпчикова
         fig = plt.figure(figsize=(6.0, 4.5))
         bars = plt.bar(wrapped_labels, values, color='#4F81BD', width=BAR_WIDTH)
         plt.ylabel('Кількість')
         plt.grid(axis='y', linestyle='--', alpha=0.5)
         plt.xticks(rotation=0)
-        
         for bar in bars:
             height = bar.get_height()
             plt.text(bar.get_x() + bar.get_width()/2., height + 0.1,
                      f'{int(height)}', ha='center', va='bottom', fontweight='bold')
     else:
-        # Кругова
         fig = plt.figure(figsize=(6.0, 5.0))
         colors = ['#4F81BD', '#C0504D', '#9BBB59', '#8064A2', '#4BACC6', '#F79646']
         c_arg = colors[:len(values)] if len(values) <= len(colors) else None
@@ -118,12 +105,25 @@ def build_pptx_report(
     original_df: pd.DataFrame,
     sliced_df: pd.DataFrame,
     summaries: List[QuestionSummary],
-    range_info: str
+    range_info: str,
+    background_image_path: Optional[str] = "background.png"
 ) -> bytes:
     
-    prs = Presentation() # Стандартна біла тема
+    prs = Presentation()
 
-    # 1. Титульний слайд
+    # --- ВСТАНОВЛЕННЯ ФОНУ ---
+    if background_image_path and os.path.exists(background_image_path):
+        for master in prs.slide_masters:
+            try:
+                master.background.fill.user_picture(background_image_path)
+                # Також для кожного макету в майстрі
+                for layout in master.slide_layouts:
+                    try:
+                        layout.background.fill.user_picture(background_image_path)
+                    except: pass
+            except: pass
+
+    # 1. Титульний
     slide_layout = prs.slide_layouts[0] 
     slide = prs.slides.add_slide(slide_layout)
     try:
@@ -131,28 +131,21 @@ def build_pptx_report(
         slide.placeholders[1].text = f"Всього анкет: {len(original_df)}\nОброблено: {len(sliced_df)}\n{range_info}"
     except: pass
 
-    # 2. Технічна інформація
+    # 2. Технічний
     slide_layout = prs.slide_layouts[1] 
     slide = prs.slides.add_slide(slide_layout)
     try:
         slide.shapes.title.text = "Технічна інформація"
         tf = slide.placeholders[1].text_frame
         tf.text = "Параметри вибірки:"
-        
-        infos = [
-            f"Загальна кількість респондентів: {len(original_df)}",
-            f"Кількість анкет у звіті: {len(sliced_df)}",
-            f"Діапазон обробки: {range_info}"
-        ]
-        for info in infos:
+        for txt in [f"Загальна кількість: {len(original_df)}", f"У звіті: {len(sliced_df)}", f"Діапазон: {range_info}"]:
             p = tf.add_paragraph()
-            p.text = info
+            p.text = txt
             p.font.size = Pt(20)
-            p.level = 0
     except: pass
 
-    # 3. Слайди з даними
-    layout_index = 5 # Title Only
+    # 3. Питання
+    layout_index = 5 
     if len(prs.slide_layouts) <= 5: layout_index = len(prs.slide_layouts) - 1
     
     for qs in summaries:
@@ -168,60 +161,61 @@ def build_pptx_report(
                 title.text_frame.paragraphs[0].font.size = Pt(24)
         except: pass
 
-        # --- Таблиця (Зліва) ---
+        # --- ТАБЛИЦЯ ---
         rows = len(qs.table) + 1
         cols = 3
-        # Розміри
+        # Координати
         left = Inches(0.5); top = Inches(2.0); width = Inches(4.5); height = Inches(0.8)
         
-        table = slide.shapes.add_table(rows, cols, left, top, width, height).table
+        table_shape = slide.shapes.add_table(rows, cols, left, top, width, height)
+        table = table_shape.table
 
         # Ширина колонок
         table.columns[0].width = Inches(2.5)
         table.columns[1].width = Inches(1.0)
         table.columns[2].width = Inches(1.0)
 
-        # Заповнення заголовків
+        # Заповнення
+        # Хедер
         headers = ["Варіант", "Кільк.", "%"]
         for i, h in enumerate(headers):
             cell = table.cell(0, i)
             cell.text = h
             cell.text_frame.paragraphs[0].font.bold = True
             cell.text_frame.paragraphs[0].font.size = Pt(FONT_SIZE_TABLE_HEADER)
+            # Фон хедера
+            cell.fill.solid(); cell.fill.fore_color.rgb = RGBColor(230, 230, 230)
+            cell.text_frame.paragraphs[0].font.color.rgb = RGBColor(0, 0, 0)
             
-            # Фон заголовка (світло-сірий)
-            cell.fill.solid()
-            cell.fill.fore_color.rgb = RGBColor(230, 230, 230)
-            
-            # РАМКА
-            set_cell_border(cell, border_width='12700')
+            # РАМКА!
+            _set_cell_border(cell)
 
-        # Заповнення даних
+        # Дані
         for i, row in enumerate(qs.table.itertuples(index=False)):
             # Варіант
             cell = table.cell(i+1, 0)
             cell.text = str(row[0])
             cell.text_frame.paragraphs[0].font.size = Pt(FONT_SIZE_TABLE_DATA)
             cell.fill.solid(); cell.fill.fore_color.rgb = RGBColor(255, 255, 255)
-            set_cell_border(cell, border_width='12700')
+            _set_cell_border(cell) # РАМКА!
             
-            # Кількість
+            # Кільк
             cell = table.cell(i+1, 1)
             cell.text = str(row[1])
-            cell.text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER
             cell.text_frame.paragraphs[0].font.size = Pt(FONT_SIZE_TABLE_DATA)
+            cell.text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER
             cell.fill.solid(); cell.fill.fore_color.rgb = RGBColor(255, 255, 255)
-            set_cell_border(cell, border_width='12700')
+            _set_cell_border(cell) # РАМКА!
             
-            # Відсоток
+            # %
             cell = table.cell(i+1, 2)
             cell.text = str(row[2])
-            cell.text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER
             cell.text_frame.paragraphs[0].font.size = Pt(FONT_SIZE_TABLE_DATA)
+            cell.text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER
             cell.fill.solid(); cell.fill.fore_color.rgb = RGBColor(255, 255, 255)
-            set_cell_border(cell, border_width='12700')
+            _set_cell_border(cell) # РАМКА!
 
-        # --- Діаграма (Справа) ---
+        # --- ДІАГРАМА ---
         try:
             img_stream = create_chart_image(qs)
             slide.shapes.add_picture(img_stream, Inches(5.2), Inches(2.0), width=Inches(4.6))
