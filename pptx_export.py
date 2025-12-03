@@ -183,7 +183,7 @@ def build_pptx_report(
                 
                 # --- ЗАЛИВКА (Застосовується до ВСІХ клітинок даних) ---
                 cell.fill.solid()
-                cell.fill.fore_color.rgb = RGBColor(255, 255, 255) # Білий фон
+                cell.fill.fore_color.rgb = RGBColor(230, 230, 230) # Білий фон
                 cell.text_frame.paragraphs[0].font.color.rgb = RGBColor(0, 0, 0) # Чорний текст
 
         # --- ДІАГРАМА ---
