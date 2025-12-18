@@ -1,6 +1,7 @@
 import io
 import os
 import streamlit as st
+import zipfile
 import plotly.express as px
 import pandas as pd
 
@@ -121,14 +122,33 @@ if st.session_state.processed and st.session_state.sliced is not None:
         st.subheader("Експорт")
         range_info = f"Рядки {st.session_state.from_row}–{st.session_state.to_row}"
         
-        @st.cache_data(show_spinner="Excel...")
+        @st.cache_data(show_spinner="Генеруємо Excel...")
         def get_excel(_ld, _sl, _qi, _sm, _ri): return build_excel_report(_ld, _sl, _qi, _sm, _ri)
-        @st.cache_data(show_spinner="PDF...")
+        @st.cache_data(show_spinner="Генеруємо PDF...")
         def get_pdf(_ld, _sl, _sm, _ri): return build_pdf_report(_ld, _sl, _sm, _ri)
-        @st.cache_data(show_spinner="DOCX...")
+        @st.cache_data(show_spinner="Генеруємо DOCX...")
         def get_docx(_ld, _sl, _sm, _ri): return build_docx_report(_ld, _sl, _sm, _ri)
-        @st.cache_data(show_spinner="PPTX...")
+        @st.cache_data(show_spinner="Генеруємо PPTX...")
         def get_pptx(_ld, _sl, _sm, _ri): return build_pptx_report(_ld, _sl, _sm, _ri)
+
+        @st.cache_data(show_spinner="Генеруємо повний архів...")
+        def get_zip_archive(_original_df, _sliced_df, _qinfo, _summaries, _range_info):
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+
+                excel_bytes = build_excel_report(_original_df, _sliced_df, _qinfo, _summaries, _range_info)
+                zip_file.writestr("results_excel.xlsx", excel_bytes)
+
+                pdf_bytes = build_pdf_report(_original_df, _sliced_df, _summaries, _range_info)
+                zip_file.writestr("results_pdf.pdf", pdf_bytes)
+
+                docx_bytes = build_docx_report(_original_df, _sliced_df, _summaries, _range_info)
+                zip_file.writestr("results_word.docx", docx_bytes)
+
+                pptx_bytes = build_pptx_report(_original_df, _sliced_df, _summaries, _range_info)
+                zip_file.writestr("results_presentation.pptx", pptx_bytes)
+
+            return zip_buffer.getvalue()
 
         cols = st.columns(4)
         with cols[0]:
@@ -139,6 +159,37 @@ if st.session_state.processed and st.session_state.sliced is not None:
             if st.button("📝 Word"): st.download_button("📥 Завантажити", get_docx(st.session_state.ld.df, st.session_state.sliced, st.session_state.summaries, range_info), "s.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
         with cols[3]:
             if st.button("🖥️ PPTX"): st.download_button("📥 Завантажити", get_pptx(st.session_state.ld.df, st.session_state.sliced, st.session_state.summaries, range_info), "s.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation")
+
+        st.divider()
+       
+        col_zip_left, col_zip_right = st.columns([2, 1])
+        
+        with col_zip_left:
+            st.write("📦 **Завантажити всі звіти одним архівом**")
+            st.caption("Містить: .xlsx, .pdf, .docx, .pptx")
+            
+        with col_zip_right:
+            if st.button("🗂️ Створити ZIP-архів", type="primary", use_container_width=True):
+                with st.spinner("Генеруємо всі 4 звіти та пакуємо в архів..."):
+                    try:
+                        zip_data = get_zip_archive(
+                            st.session_state.ld.df, 
+                            st.session_state.sliced, 
+                            st.session_state.qinfo, 
+                            st.session_state.summaries, 
+                            range_info
+                        )
+                        
+                        st.download_button(
+                            label="📥 Завантажити ZIP",
+                            data=zip_data,
+                            file_name="survey_full_report.zip",
+                            mime="application/zip",
+                            type="primary",
+                            use_container_width=True
+                        )
+                    except Exception as e:
+                        st.error(f"Помилка при створенні архіву: {e}")
 
 elif not st.session_state.ld:
     st.info("👈 Завантажте файл.")
