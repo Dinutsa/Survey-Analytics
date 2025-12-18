@@ -3,6 +3,7 @@ import os
 import streamlit as st
 import zipfile
 import plotly.express as px
+import matplotlib.pyplot as plt
 import pandas as pd
 
 # Імпорти
@@ -133,6 +134,7 @@ if st.session_state.processed and st.session_state.sliced is not None:
 
         @st.cache_data(show_spinner="Генеруємо повний архів...")
         def get_zip_archive(_original_df, _sliced_df, _qinfo, _summaries, _range_info):
+            plt.close('all')
             zip_buffer = io.BytesIO()
             with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
 
