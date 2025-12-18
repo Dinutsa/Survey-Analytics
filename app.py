@@ -140,12 +140,15 @@ if st.session_state.processed and st.session_state.sliced is not None:
 
                 excel_bytes = build_excel_report(_original_df, _sliced_df, _qinfo, _summaries, _range_info)
                 zip_file.writestr("results_excel.xlsx", excel_bytes)
+                plt.close('all')
 
                 pdf_bytes = build_pdf_report(_original_df, _sliced_df, _summaries, _range_info)
                 zip_file.writestr("results_pdf.pdf", pdf_bytes)
+                plt.close('all')
 
                 docx_bytes = build_docx_report(_original_df, _sliced_df, _summaries, _range_info)
                 zip_file.writestr("results_word.docx", docx_bytes)
+                plt.close('all')
 
                 pptx_bytes = build_pptx_report(_original_df, _sliced_df, _summaries, _range_info)
                 zip_file.writestr("results_presentation.pptx", pptx_bytes)
