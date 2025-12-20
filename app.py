@@ -63,20 +63,23 @@ with st.sidebar:
             st.session_state.clear()
             st.rerun()
 
-# --- HELPER FUNCTION ---
-def format_question_label(qs):
-    """Допоміжна функція для гарного відображення питань у списку"""
-    # Обрізаємо дуже довгі питання до 100 символів для зручності
-    text = qs.question.text
-    if len(text) > 100:
-        text = text[:100] + "..."
-    return f"{qs.question.code}. {text}"
-
 # --- MAIN ---
 if st.session_state.processed and st.session_state.sliced is not None:
     sliced = st.session_state.sliced
     summaries = st.session_state.summaries
     
+    # Словник для швидкого пошуку об'єкта за кодом: {"Q1": QuestionSummaryObject, ...}
+    # Це потрібно для виправлення помилки selectbox
+    summary_map = {qs.question.code: qs for qs in summaries}
+    question_codes = list(summary_map.keys())
+
+    # Функція для форматування тексту у випадаючому списку
+    def get_label(code):
+        qs = summary_map[code]
+        text = qs.question.text
+        if len(text) > 90: text = text[:90] + "..."
+        return f"{code}. {text}"
+
     t1, t2 = st.tabs(["📊 Аналіз", "📥 Експорт"])
     
     # === ВКЛАДКА 1: АНАЛІЗ ===
@@ -89,42 +92,47 @@ if st.session_state.processed and st.session_state.sliced is not None:
         
         # 1. ДЕТАЛЬНИЙ ПЕРЕГЛЯД
         st.subheader("Детальний перегляд")
-        # Використовуємо format_func для відображення "Код. Текст"
-        selected_qs = st.selectbox(
+        
+        # Передаємо список КОДІВ (рядків), а не об'єктів
+        selected_code = st.selectbox(
             "Оберіть питання:", 
-            options=summaries, 
-            format_func=format_question_label
+            options=question_codes, 
+            format_func=get_label,
+            key="sb_detail"
         )
 
-        if selected_qs and not selected_qs.table.empty:
-            st.markdown(f"**{selected_qs.question.text}**")
-            c1, c2 = st.columns([1.5, 1])
-            with c1: st.plotly_chart(px.pie(selected_qs.table, names="Варіант відповіді", values="Кількість", hole=0, title="Розподіл"), use_container_width=True)
-            with c2: st.dataframe(selected_qs.table, use_container_width=True)
-        elif selected_qs:
-             st.warning("Немає даних для цього питання.")
+        if selected_code:
+            selected_qs = summary_map[selected_code] # Знаходимо об'єкт за кодом
+            
+            if not selected_qs.table.empty:
+                st.markdown(f"**{selected_qs.question.text}**")
+                c1, c2 = st.columns([1.5, 1])
+                with c1: st.plotly_chart(px.pie(selected_qs.table, names="Варіант відповіді", values="Кількість", hole=0, title="Розподіл"), use_container_width=True)
+                with c2: st.dataframe(selected_qs.table, use_container_width=True)
+            else:
+                 st.warning("Немає даних для цього питання.")
 
         st.divider()
 
-        # 2. КРОС-ТАБУЛЯЦІЯ (З покращеним UI та фіксом помилки)
+        # 2. КРОС-ТАБУЛЯЦІЯ
         st.subheader("🔀 Крос-табуляція (Фільтр)")
         with st.expander("Налаштувати фільтр (Хто як відповів?)", expanded=True):
             ct_col1, ct_col2, ct_col3 = st.columns(3)
             
-            # 1. Питання-фільтр
+            # 1. Питання-фільтр (Вибір коду)
             with ct_col1:
-                filter_qs = st.selectbox(
+                filter_code = st.selectbox(
                     "1. Питання-фільтр:", 
-                    options=summaries, 
-                    format_func=format_question_label,
+                    options=question_codes, 
+                    format_func=get_label,
                     key="cross_q1"
                 )
+                filter_qs = summary_map[filter_code] if filter_code else None
             
             # 2. Значення фільтра
             with ct_col2:
                 filter_val = None
                 if filter_qs:
-                    # Використовуємо .text, бо це назва колонки в DataFrame
                     col_name = filter_qs.question.text
                     if col_name in sliced.columns:
                         unique_vals = sliced[col_name].unique()
@@ -133,21 +141,22 @@ if st.session_state.processed and st.session_state.sliced is not None:
                     else:
                         st.error("Помилка: колонка не знайдена.")
             
-            # 3. Цільове питання
+            # 3. Цільове питання (Вибір коду)
             with ct_col3:
-                target_qs = st.selectbox(
+                target_code = st.selectbox(
                     "3. Що аналізуємо:", 
-                    options=summaries, 
-                    format_func=format_question_label,
+                    options=question_codes, 
+                    format_func=get_label,
                     key="cross_q2"
                 )
+                target_qs = summary_map[target_code] if target_code else None
 
-            # Логіка та відображення
+            # Логіка
             if filter_qs and target_qs and filter_val:
                 col_name_filter = filter_qs.question.text
                 col_name_target = target_qs.question.text
                 
-                # Фільтрація даних
+                # Фільтруємо
                 subset = sliced[sliced[col_name_filter] == filter_val]
                 
                 if not subset.empty:
@@ -155,7 +164,7 @@ if st.session_state.processed and st.session_state.sliced is not None:
                     st.markdown(f"#### Результати для питання: {target_qs.question.code}")
                     st.caption(f"{target_qs.question.text}")
                     
-                    # Рахуємо статистику
+                    # Статистика
                     counts = subset[col_name_target].value_counts().reset_index()
                     counts.columns = ["Варіант відповіді", "Кількість"]
                     counts["%"] = (counts["Кількість"] / len(subset) * 100).round(1)
@@ -171,11 +180,10 @@ if st.session_state.processed and st.session_state.sliced is not None:
 
         st.divider()
         
-        # 3. ПОВНИЙ СПИСОК (РОЗКРИТИЙ)
+        # 3. ПОВНИЙ СПИСОК
         st.subheader("📋 Повний огляд всіх питань")
         for q in summaries:
             if q.table.empty: continue
-            # expanded=True робить їх відкритими за замовчуванням
             with st.expander(f"{q.question.code}. {q.question.text}", expanded=True):
                 c1, c2 = st.columns([1, 1])
                 with c1: st.plotly_chart(px.pie(q.table, names="Варіант відповіді", values="Кількість", hole=0), use_container_width=True, key=f"all_{q.question.code}")
@@ -195,23 +203,18 @@ if st.session_state.processed and st.session_state.sliced is not None:
         @st.cache_data(show_spinner="PPTX...")
         def get_pptx(_ld, _sl, _sm, _ri): return build_pptx_report(_ld, _sl, _sm, _ri)
 
-        # ZIP-архів (З ОЧИЩЕННЯМ ПАМ'ЯТІ)
         @st.cache_data(show_spinner="Архівуємо...")
         def get_zip_archive(_ld, _sl, _qi, _sm, _ri):
-            plt.close('all') # Чистимо перед стартом
+            plt.close('all') 
             buf = io.BytesIO()
             with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
                 zf.writestr("results.xlsx", build_excel_report(_ld, _sl, _qi, _sm, _ri))
-                
-                plt.close('all') # Чистимо
+                plt.close('all') 
                 zf.writestr("results.pdf", build_pdf_report(_ld, _sl, _sm, _ri))
-                
-                plt.close('all') # Чистимо
+                plt.close('all') 
                 zf.writestr("results.docx", build_docx_report(_ld, _sl, _sm, _ri))
-                
-                plt.close('all') # Чистимо
+                plt.close('all') 
                 zf.writestr("results.pptx", build_pptx_report(_ld, _sl, _sm, _ri))
-                
             return buf.getvalue()
 
         c1, c2, c3, c4 = st.columns(4)
