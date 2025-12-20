@@ -1,9 +1,7 @@
 """
 Модуль експорту звіту у формат PDF.
-ВЕРСІЯ: Universal Syntax (Legacy Compatible).
-- Працює і з fpdf, і з fpdf2.
-- Використовує ln=1 замість new_x/new_y.
-- Автоматичне завантаження українського шрифту.
+ВЕРСІЯ: AUTO-DOWNLOAD (Працює на Streamlit Cloud).
+Автоматично качає шрифт перед генерацією.
 """
 
 import io
@@ -22,31 +20,35 @@ from summary import QuestionSummary
 # --- НАЛАШТУВАННЯ ---
 CHART_DPI = 150
 BAR_WIDTH = 0.6
-FONT_URL = "https://github.com/coreybutler/fonts/raw/master/ttf/DejaVuSans.ttf"
-FONT_FILE = "DejaVuSans.ttf"
 
-def check_and_download_font():
-    """Завантажує шрифт, якщо його немає."""
-    if not os.path.exists(FONT_FILE):
+# Пряме посилання на файл шрифту
+FONT_URL = "https://github.com/coreybutler/fonts/raw/master/ttf/DejaVuSans.ttf"
+FONT_FILENAME = "DejaVuSans.ttf"
+
+def ensure_font_exists():
+    """Гарантує, що файл шрифту є на диску. Якщо ні - качає його."""
+    if not os.path.exists(FONT_FILENAME):
         try:
-            print(f"Завантаження шрифту {FONT_FILE}...")
+            print(f"🔄 Завантажую шрифт {FONT_FILENAME} для Streamlit Cloud...")
+            # Додаємо заголовок User-Agent, щоб сервер не відхилив запит
             opener = urllib.request.build_opener()
             opener.addheaders = [('User-agent', 'Mozilla/5.0')]
             urllib.request.install_opener(opener)
-            urllib.request.urlretrieve(FONT_URL, FONT_FILE)
-            print("Шрифт завантажено.")
+            
+            urllib.request.urlretrieve(FONT_URL, FONT_FILENAME)
+            print("✅ Шрифт успішно завантажено!")
         except Exception as e:
-            print(f"Помилка завантаження шрифту: {e}")
+            print(f"❌ Критична помилка завантаження шрифту: {e}")
 
 class PDFReport(FPDF):
     def header(self):
-        # Спроба встановити шрифт (DejaVu або стандартний)
+        # Пробуємо використати DejaVu (якщо він зареєструвався), інакше Arial
         try:
             self.set_font("DejaVu", size=10)
         except:
             self.set_font("Arial", "B", 10)
         
-        # Використовуємо ln=1 (новий рядок) замість new_y="NEXT"
+        # ln=1 працює у всіх версіях
         self.cell(0, 10, "Звіт про результати опитування", ln=1, align='R')
 
     def footer(self):
@@ -66,7 +68,7 @@ def create_chart_image(qs: QuestionSummary) -> io.BytesIO:
     values = qs.table["Кількість"]
     wrapped_labels = [textwrap.fill(l, 25) for l in labels]
 
-    # Розумна перевірка типу (числа -> стовпчики)
+    # Розумна перевірка (1-10 -> Стовпчики, Текст -> Круг)
     is_scale = (qs.question.qtype == QuestionType.SCALE)
     if not is_scale:
         try:
@@ -76,7 +78,6 @@ def create_chart_image(qs: QuestionSummary) -> io.BytesIO:
         except: pass
 
     if is_scale:
-        # СТОВПЧИКОВА
         fig = plt.figure(figsize=(6.0, 4.0))
         bars = plt.bar(wrapped_labels, values, color='#4F81BD', width=BAR_WIDTH)
         plt.ylabel('Кількість')
@@ -86,11 +87,9 @@ def create_chart_image(qs: QuestionSummary) -> io.BytesIO:
             plt.text(bar.get_x() + bar.get_width()/2., height + 0.1,
                      f'{int(height)}', ha='center', va='bottom', fontweight='bold')
     else:
-        # КРУГОВА
         fig = plt.figure(figsize=(6.0, 4.0))
         colors = ['#4F81BD', '#C0504D', '#9BBB59', '#8064A2', '#4BACC6', '#F79646']
         c_arg = colors[:len(values)] if len(values) <= len(colors) else None
-        
         wedges, texts, autotexts = plt.pie(
             values, labels=None, autopct='%1.1f%%', startangle=90,
             pctdistance=0.8, colors=c_arg, radius=1.0
@@ -100,7 +99,6 @@ def create_chart_image(qs: QuestionSummary) -> io.BytesIO:
             autotext.set_weight('bold')
             import matplotlib.patheffects as path_effects
             autotext.set_path_effects([path_effects.withStroke(linewidth=2, foreground='#333333')])
-
         plt.axis('equal')
         cols = 2 if len(labels) > 3 else 1
         plt.legend(wrapped_labels, loc="upper center", bbox_to_anchor=(0.5, 0.0), ncol=cols, frameon=False, fontsize=8)
@@ -113,39 +111,43 @@ def create_chart_image(qs: QuestionSummary) -> io.BytesIO:
     return img_stream
 
 def build_pdf_report(original_df, sliced_df, summaries, range_info) -> bytes:
-    # 1. Завантажуємо шрифт
-    check_and_download_font()
+    # 1. ГОЛОВНИЙ КРОК: Перевіряємо і качаємо шрифт
+    ensure_font_exists()
     
     pdf = PDFReport()
     
-    # 2. Реєструємо шрифт (пробуємо різні варіанти параметрів для сумісності)
-    font_ok = False
-    if os.path.exists(FONT_FILE):
+    # 2. Реєструємо шрифт
+    # Використовуємо абсолютний шлях, щоб точно знайти файл
+    font_path = os.path.abspath(FONT_FILENAME)
+    font_ready = False
+
+    if os.path.exists(font_path):
         try:
-            # Універсальний виклик, який часто спрацьовує і там, і там
-            pdf.add_font('DejaVu', '', FONT_FILE, uni=True)
-            font_ok = True
+            # uni=True - ключовий параметр для старої fpdf
+            pdf.add_font('DejaVu', '', font_path, uni=True)
+            font_ready = True
         except:
             try:
-                # Спроба для новіших версій без uni=True
-                pdf.add_font('DejaVu', '', FONT_FILE)
-                font_ok = True
+                # Спроба для нової fpdf2 (без uni=True)
+                pdf.add_font('DejaVu', '', font_path)
+                font_ready = True
             except:
-                print("Не вдалося підключити шрифт DejaVu.")
-
+                print("⚠️ Не вдалося зареєструвати шрифт DejaVu.")
+    
     pdf.add_page()
     
-    # Вибір шрифту
-    if font_ok: pdf.set_font("DejaVu", size=16)
+    # Встановлюємо шрифт
+    if font_ready: pdf.set_font("DejaVu", size=16)
     else: pdf.set_font("Arial", "B", 16)
     
     pdf.cell(0, 10, "Звіт про результати", ln=1, align='C')
     
-    if font_ok: pdf.set_font("DejaVu", size=12)
+    if font_ready: pdf.set_font("DejaVu", size=12)
     else: pdf.set_font("Arial", size=12)
 
     pdf.cell(0, 10, f"Всього: {len(original_df)} | Оброблено: {len(sliced_df)}", ln=1, align='C')
     
+    # Заміна тире, яке часто ламає кодування
     safe_range = range_info.replace('–', '-').replace('—', '-')
     pdf.cell(0, 10, safe_range, ln=1, align='C')
     pdf.ln(5)
@@ -153,27 +155,25 @@ def build_pdf_report(original_df, sliced_df, summaries, range_info) -> bytes:
     for qs in summaries:
         if qs.table.empty: continue
         
-        # Заголовок
         title = f"{qs.question.code}. {qs.question.text}"
         title = title.replace('–', '-').replace('—', '-').replace('’', "'")
         
-        if font_ok: pdf.set_font("DejaVu", size=12)
+        if font_ready: pdf.set_font("DejaVu", size=12)
         else: pdf.set_font("Arial", size=12)
             
         pdf.multi_cell(0, 6, title)
         pdf.ln(2)
 
         # Таблиця
-        if font_ok: pdf.set_font("DejaVu", size=10)
+        if font_ready: pdf.set_font("DejaVu", size=10)
         else: pdf.set_font("Arial", size=10)
 
         col_w1 = 110
         col_w2 = 30
         
-        # Заголовки (ln=0 означає "залишаємось на рядку")
         pdf.cell(col_w1, 8, "Варіант", border=1, ln=0)
         pdf.cell(col_w2, 8, "Кільк.", border=1, ln=0)
-        pdf.cell(col_w2, 8, "%", border=1, ln=1) # Тут ln=1, перехід на новий рядок
+        pdf.cell(col_w2, 8, "%", border=1, ln=1)
         
         for row in qs.table.itertuples(index=False):
             val_text = str(row[0])[:60].replace('–', '-').replace('—', '-').replace('’', "'")
@@ -184,7 +184,7 @@ def build_pdf_report(original_df, sliced_df, summaries, range_info) -> bytes:
             
         pdf.ln(5)
 
-        # Графік
+        # Графік через тимчасовий файл
         try:
             img = create_chart_image(qs)
             import tempfile
@@ -192,7 +192,6 @@ def build_pdf_report(original_df, sliced_df, summaries, range_info) -> bytes:
                 tmp.write(img.getvalue())
                 name = tmp.name
             
-            # x=35 центрує картинку (при ширині А4 ~210мм і ширині картинки 140мм)
             pdf.image(name, w=140, x=35)
             os.unlink(name)
             pdf.ln(10)
@@ -202,7 +201,7 @@ def build_pdf_report(original_df, sliced_df, summaries, range_info) -> bytes:
         if pdf.get_y() > 240:
             pdf.add_page()
 
-    # Повертаємо байти (через тимчасовий файл, щоб уникнути помилок кодування)
+    # Повертаємо PDF як байти через тимчасовий файл (найбезпечніший метод)
     import tempfile
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf:
         pdf.output(tmp_pdf.name)
