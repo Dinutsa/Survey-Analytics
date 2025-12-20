@@ -1,9 +1,9 @@
 import io
 import textwrap
+import pandas as pd # Імпорт Pandas обов'язковий!
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-
 from docx import Document
 from docx.shared import Inches, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -20,11 +20,9 @@ FONT_SIZE_CHART = 10
 BAR_WIDTH = 0.6
 
 def set_table_borders(table):
-    """Додає рамки для таблиці у Word."""
     tbl = table._tbl
     tblPr = tbl.tblPr
     tblBorders = OxmlElement('w:tblBorders')
-    
     for border_name in ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']:
         border = OxmlElement(f'w:{border_name}')
         border.set(qn('w:val'), 'single')
@@ -32,13 +30,10 @@ def set_table_borders(table):
         border.set(qn('w:space'), '0')
         border.set(qn('w:color'), '000000')
         tblBorders.append(border)
-    
     tblPr.append(tblBorders)
 
 def create_chart_image(qs: QuestionSummary) -> io.BytesIO:
-    """Генерує зображення діаграми (РОЗУМНИЙ ВИБІР: Bar або Pie)."""
-    
-    plt.close('all') 
+    plt.close('all')
     plt.clf()
     plt.rcParams.update({'font.size': FONT_SIZE_CHART})
     
@@ -46,7 +41,7 @@ def create_chart_image(qs: QuestionSummary) -> io.BytesIO:
     values = qs.table["Кількість"]
     wrapped_labels = [textwrap.fill(l, 25) for l in labels]
 
-    # --- ВИЗНАЧЕННЯ ТИПУ ---
+    # --- РОЗУМНА ПЕРЕВІРКА ТИПУ ---
     is_scale = (qs.question.qtype == QuestionType.SCALE)
     if not is_scale:
         try:
@@ -57,24 +52,23 @@ def create_chart_image(qs: QuestionSummary) -> io.BytesIO:
 
     if is_scale:
         # СТОВПЧИКОВА
-        fig = plt.figure(figsize=(6.0, 4.5))
+        fig = plt.figure(figsize=(6.0, 4.0))
         bars = plt.bar(wrapped_labels, values, color='#4F81BD', width=BAR_WIDTH)
         plt.ylabel('Кількість')
         plt.grid(axis='y', linestyle='--', alpha=0.5)
-        plt.xticks(rotation=0)
         for bar in bars:
             height = bar.get_height()
             plt.text(bar.get_x() + bar.get_width()/2., height + 0.1,
                      f'{int(height)}', ha='center', va='bottom', fontweight='bold')
     else:
         # КРУГОВА
-        fig = plt.figure(figsize=(6.0, 5.0))
+        fig = plt.figure(figsize=(6.0, 4.0))
         colors = ['#4F81BD', '#C0504D', '#9BBB59', '#8064A2', '#4BACC6', '#F79646']
         c_arg = colors[:len(values)] if len(values) <= len(colors) else None
         
         wedges, texts, autotexts = plt.pie(
             values, labels=None, autopct='%1.1f%%', startangle=90,
-            pctdistance=0.8, colors=c_arg, radius=1.1,
+            pctdistance=0.8, colors=c_arg, radius=1.0,
             textprops={'fontsize': FONT_SIZE_CHART}
         )
         for autotext in autotexts:
@@ -84,34 +78,25 @@ def create_chart_image(qs: QuestionSummary) -> io.BytesIO:
             autotext.set_path_effects([path_effects.withStroke(linewidth=2, foreground='#333333')])
 
         plt.axis('equal')
-        cols = 2 if len(labels) > 2 else 1
-        plt.legend(wrapped_labels, loc="upper center", bbox_to_anchor=(0.5, 0.0), ncol=cols, frameon=False, fontsize=10)
+        cols = 2 if len(labels) > 3 else 1
+        plt.legend(wrapped_labels, loc="upper center", bbox_to_anchor=(0.5, 0.0), ncol=cols, frameon=False, fontsize=9)
 
     plt.tight_layout()
     img_stream = io.BytesIO()
     plt.savefig(img_stream, format='png', dpi=CHART_DPI, bbox_inches='tight')
-    plt.close(fig) 
+    plt.close(fig)
     img_stream.seek(0)
     return img_stream
 
-def build_docx_report(
-    original_df,
-    sliced_df,
-    summaries: List[QuestionSummary],
-    range_info: str
-) -> bytes:
+def build_docx_report(original_df, sliced_df, summaries, range_info) -> bytes:
     doc = Document()
-    
-    # Стилі
     style = doc.styles['Normal']
     font = style.font
     font.name = 'Times New Roman'
     font.size = Pt(12)
 
-    # Заголовок
     head = doc.add_heading('Звіт про результати опитування', 0)
     head.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    
     doc.add_paragraph(f"Всього анкет: {len(original_df)}")
     doc.add_paragraph(f"Оброблено: {len(sliced_df)}")
     doc.add_paragraph(f"Діапазон: {range_info}")
@@ -120,36 +105,27 @@ def build_docx_report(
     for qs in summaries:
         if qs.table.empty: continue
         
-        # Назва питання
         p = doc.add_paragraph()
         runner = p.add_run(f"{qs.question.code}. {qs.question.text}")
         runner.bold = True
         runner.font.size = Pt(14)
         
-        # Таблиця
         table = doc.add_table(rows=1, cols=3)
         set_table_borders(table)
+        hdr = table.rows[0].cells
+        hdr[0].text = 'Варіант'; hdr[1].text = 'Кількість'; hdr[2].text = '%'
         
-        hdr_cells = table.rows[0].cells
-        hdr_cells[0].text = 'Варіант'
-        hdr_cells[1].text = 'Кількість'
-        hdr_cells[2].text = '%'
-        
-        for row_data in qs.table.itertuples(index=False):
-            row_cells = table.add_row().cells
-            row_cells[0].text = str(row_data[0])
-            row_cells[1].text = str(row_data[1])
-            row_cells[2].text = str(row_data[2])
+        for row in qs.table.itertuples(index=False):
+            rc = table.add_row().cells
+            rc[0].text = str(row[0])
+            rc[1].text = str(row[1])
+            rc[2].text = str(row[2])
 
-        # Діаграма
         try:
             img_stream = create_chart_image(qs)
             doc.add_picture(img_stream, width=Inches(5.5))
-            last_paragraph = doc.paragraphs[-1] 
-            last_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        except Exception as e:
-            doc.add_paragraph(f"[Помилка генерації діаграми: {e}]")
-
+            doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+        except: pass
         doc.add_paragraph("\n")
 
     output = io.BytesIO()
