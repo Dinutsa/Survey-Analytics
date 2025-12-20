@@ -1,9 +1,9 @@
 """
 Модуль експорту звіту у формат PDF.
-ВЕРСІЯ: CRASH-PROOF (Захист від Unicode помилок).
-- Якщо шрифт не завантажився, пише англійською (щоб не крашити додаток).
-- Автоматично качає шрифт DejaVuSans.
-- Працює на fpdf2.
+ВЕРСІЯ: TIMES NEW ROMAN STYLE (Tinos Font).
+- Використовує шрифт Tinos (аналог Times New Roman).
+- Повна підтримка кирилиці.
+- Розумні графіки (Стовпчики/Круг).
 """
 
 import io
@@ -24,16 +24,17 @@ from summary import QuestionSummary
 CHART_DPI = 150
 BAR_WIDTH = 0.6
 
-# Абсолютний шлях до шрифту
-FONT_FILENAME = "DejaVuSans.ttf"
+# Налаштування шрифту (Tinos - це 100% аналог Times New Roman з кирилицею)
+FONT_FILENAME = "Tinos-Regular.ttf"
 FONT_PATH = os.path.join(os.getcwd(), FONT_FILENAME)
-FONT_URL = "https://github.com/coreybutler/fonts/raw/master/ttf/DejaVuSans.ttf"
+# Пряме посилання на файл шрифту
+FONT_URL = "https://github.com/google/fonts/raw/main/apache/tinos/Tinos-Regular.ttf"
 
 def ensure_font_exists():
     """Гарантує, що файл шрифту є на диску."""
     if not os.path.exists(FONT_PATH) or os.path.getsize(FONT_PATH) == 0:
         try:
-            print(f"🔄 Завантажую шрифт: {FONT_PATH}")
+            print(f"🔄 Завантажую шрифт (Times style): {FONT_PATH}")
             opener = urllib.request.build_opener()
             opener.addheaders = [('User-agent', 'Mozilla/5.0')]
             urllib.request.install_opener(opener)
@@ -44,34 +45,36 @@ def ensure_font_exists():
 
 class PDFReport(FPDF):
     def header(self):
-        # СПРОБА 1: Український шрифт
+        # Використовуємо шрифт Times
         try:
-            self.set_font("DejaVu", size=10)
+            self.set_font("TimesUA", size=10)
             self.cell(0, 10, "Звіт про результати опитування", ln=1, align='R')
         except Exception:
-            # ФОЛБЕК: Якщо шрифту немає, пишемо англійською (Arial підтримує Latin-1)
-            # Це запобігає помилці FPDFUnicodeEncodingException
-            self.set_font("Helvetica", "B", 10)
-            self.cell(0, 10, "Survey Report (Font Missing)", ln=1, align='R')
+            # Fallback
+            self.set_font("Times", "B", 10)
+            self.cell(0, 10, "Survey Report", ln=1, align='R')
 
     def footer(self):
         self.set_y(-15)
         try:
-            self.set_font("DejaVu", size=8)
+            self.set_font("TimesUA", size=8)
         except:
-            self.set_font("Helvetica", "I", 8)
+            self.set_font("Times", "I", 8)
         self.cell(0, 10, f'Page {self.page_no()}', align='C')
 
 def create_chart_image(qs: QuestionSummary) -> io.BytesIO:
     plt.close('all')
     plt.clf()
-    plt.rcParams.update({'font.size': 10})
+    # Шрифт на графіках теж робимо схожим на Times (serif)
+    plt.rcParams.update({
+        'font.size': 10,
+        'font.family': 'serif' 
+    })
     
     labels = qs.table["Варіант відповіді"].astype(str).tolist()
     values = qs.table["Кількість"]
     wrapped_labels = [textwrap.fill(l, 25) for l in labels]
 
-    # Розумна перевірка типу
     is_scale = (qs.question.qtype == QuestionType.SCALE)
     if not is_scale:
         try:
@@ -82,6 +85,7 @@ def create_chart_image(qs: QuestionSummary) -> io.BytesIO:
 
     if is_scale:
         fig = plt.figure(figsize=(6.0, 4.0))
+        # Колір стовпчиків - класичний синій
         bars = plt.bar(wrapped_labels, values, color='#4F81BD', width=BAR_WIDTH)
         plt.ylabel('Кількість')
         plt.grid(axis='y', linestyle='--', alpha=0.5)
@@ -102,6 +106,7 @@ def create_chart_image(qs: QuestionSummary) -> io.BytesIO:
             autotext.set_weight('bold')
             import matplotlib.patheffects as path_effects
             autotext.set_path_effects([path_effects.withStroke(linewidth=2, foreground='#333333')])
+        
         plt.axis('equal')
         cols = 2 if len(labels) > 3 else 1
         plt.legend(wrapped_labels, loc="upper center", bbox_to_anchor=(0.5, 0.0), ncol=cols, frameon=False, fontsize=8)
@@ -118,62 +123,61 @@ def build_pdf_report(original_df, sliced_df, summaries, range_info) -> bytes:
     
     pdf = PDFReport()
     
-    # Реєстрація шрифту
     font_ok = False
     if os.path.exists(FONT_PATH) and os.path.getsize(FONT_PATH) > 0:
         try:
-            pdf.add_font("DejaVu", fname=FONT_PATH)
+            # Реєструємо шрифт під назвою "TimesUA"
+            pdf.add_font("TimesUA", fname=FONT_PATH)
             font_ok = True
         except Exception as e:
             print(f"⚠️ Font error: {e}")
-    
+
     pdf.add_page()
     
-    # Титулка
+    # --- ТИТУЛКА (Times New Roman Style) ---
     if font_ok:
-        pdf.set_font("DejaVu", size=16)
-        pdf.cell(0, 10, "Звіт про результати", ln=1, align='C')
-        pdf.set_font("DejaVu", size=12)
-        range_str = range_info.replace('–', '-').replace('—', '-') # Fix dash
-        pdf.cell(0, 10, f"Всього: {len(original_df)} | Оброблено: {len(sliced_df)}", ln=1, align='C')
-        pdf.cell(0, 10, range_str, ln=1, align='C')
+        pdf.set_font("TimesUA", size=16)
+        pdf.cell(0, 10, "Звіт про результати опитування", ln=1, align='C')
+        
+        pdf.set_font("TimesUA", size=12)
+        safe_range = range_info.replace('–', '-').replace('—', '-')
+        
+        pdf.cell(0, 10, f"Всього анкет: {len(original_df)}", ln=1, align='C')
+        pdf.cell(0, 10, f"Оброблено: {len(sliced_df)}", ln=1, align='C')
+        pdf.cell(0, 10, safe_range, ln=1, align='C')
     else:
-        # Fallback на англійську, щоб не було крашів
-        pdf.set_font("Helvetica", "B", 16)
-        pdf.cell(0, 10, "Survey Results Report", ln=1, align='C')
-        pdf.set_font("Helvetica", size=12)
-        pdf.cell(0, 10, f"Total: {len(original_df)} | Processed: {len(sliced_df)}", ln=1, align='C')
-        pdf.cell(0, 10, range_info.replace('–', '-'), ln=1, align='C')
+        # Fallback (якщо раптом шрифт не скачався)
+        pdf.set_font("Times", "B", 16)
+        pdf.cell(0, 10, "Survey Report", ln=1, align='C')
+        pdf.set_font("Times", size=12)
+        pdf.cell(0, 10, f"Count: {len(sliced_df)}", ln=1, align='C')
     
     pdf.ln(5)
 
     for qs in summaries:
         if qs.table.empty: continue
         
-        # Визначаємо, який шрифт використовувати для цього блоку
-        # Якщо шрифту немає - використовуємо Helvetica, але текст чистимо від кирилиці або замінюємо
-        
         title = f"{qs.question.code}. {qs.question.text}"
         title = title.replace('–', '-').replace('—', '-').replace('’', "'")
         
+        # Назва питання
         if font_ok:
-            pdf.set_font("DejaVu", size=12)
+            pdf.set_font("TimesUA", size=12) # Звичайний Times
             pdf.multi_cell(0, 6, title)
         else:
-            pdf.set_font("Helvetica", size=12)
-            # Якщо немає укр шрифту, друкуємо тільки код питання, щоб не було помилок
-            pdf.cell(0, 6, f"Question Code: {qs.question.code}", ln=1)
+            pdf.set_font("Times", "B", 12)
+            pdf.multi_cell(0, 6, f"Question {qs.question.code}")
 
         pdf.ln(2)
 
         # Таблиця
-        if font_ok: pdf.set_font("DejaVu", size=10)
-        else: pdf.set_font("Helvetica", size=10)
+        if font_ok: pdf.set_font("TimesUA", size=11)
+        else: pdf.set_font("Times", size=10)
 
         col_w1 = 110
         col_w2 = 30
         
-        # Заголовки (безпечні)
+        # Заголовки таблиці
         h1 = "Варіант" if font_ok else "Option"
         h2 = "Кільк." if font_ok else "Count"
         h3 = "%"
@@ -185,20 +189,17 @@ def build_pdf_report(original_df, sliced_df, summaries, range_info) -> bytes:
         for row in qs.table.itertuples(index=False):
             val_text = str(row[0])[:60].replace('–', '-').replace('—', '-').replace('’', "'")
             
-            # Якщо шрифту немає, намагаємось уникнути кирилиці в таблиці,
-            # або друкуємо, сподіваючись що це цифри (для шкальних питань)
-            if not font_ok:
-                # Проста перевірка на ASCII
-                if not val_text.isascii():
-                    val_text = "[Text]" 
-            
+            # Якщо шрифт не завантажився, уникаємо кирилиці
+            if not font_ok and not val_text.isascii():
+                val_text = "..."
+
             pdf.cell(col_w1, 8, val_text, border=1, ln=0)
             pdf.cell(col_w2, 8, str(row[1]), border=1, ln=0)
             pdf.cell(col_w2, 8, str(row[2]), border=1, ln=1)
             
         pdf.ln(5)
 
-        # Графік (картинка безпечна)
+        # Графік
         try:
             img = create_chart_image(qs)
             with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
