@@ -24,35 +24,46 @@ class PDFReport(FPDF):
         self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
 
 def create_chart_image(qs: QuestionSummary) -> io.BytesIO:
-    """Генерує зображення: Стовпчики або Круг."""
-    plt.close('all')
+    """Генерує зображення діаграми (РОЗУМНИЙ ВИБІР: Bar або Pie)."""
+    
+    plt.close('all') 
     plt.clf()
-    plt.rcParams.update({'font.size': 10})
+    plt.rcParams.update({'font.size': FONT_SIZE_CHART})
     
     labels = qs.table["Варіант відповіді"].astype(str).tolist()
     values = qs.table["Кількість"]
     wrapped_labels = [textwrap.fill(l, 25) for l in labels]
 
-    if qs.question.qtype == QuestionType.SCALE:
-        # --- СТОВПЧИКОВА ---
-        fig = plt.figure(figsize=(6.0, 4.0))
+    # --- ВИЗНАЧЕННЯ ТИПУ ---
+    is_scale = (qs.question.qtype == QuestionType.SCALE)
+    if not is_scale:
+        try:
+            vals = pd.to_numeric(qs.table["Варіант відповіді"], errors='coerce')
+            if vals.notna().all() and vals.min() >= 0 and vals.max() <= 10:
+                is_scale = True
+        except: pass
+
+    if is_scale:
+        # СТОВПЧИКОВА
+        fig = plt.figure(figsize=(6.0, 4.5))
         bars = plt.bar(wrapped_labels, values, color='#4F81BD', width=BAR_WIDTH)
         plt.ylabel('Кількість')
         plt.grid(axis='y', linestyle='--', alpha=0.5)
-        
+        plt.xticks(rotation=0)
         for bar in bars:
             height = bar.get_height()
             plt.text(bar.get_x() + bar.get_width()/2., height + 0.1,
                      f'{int(height)}', ha='center', va='bottom', fontweight='bold')
     else:
-        # --- КРУГОВА ---
-        fig = plt.figure(figsize=(6.0, 4.0))
+        # КРУГОВА
+        fig = plt.figure(figsize=(6.0, 5.0))
         colors = ['#4F81BD', '#C0504D', '#9BBB59', '#8064A2', '#4BACC6', '#F79646']
         c_arg = colors[:len(values)] if len(values) <= len(colors) else None
         
         wedges, texts, autotexts = plt.pie(
             values, labels=None, autopct='%1.1f%%', startangle=90,
-            pctdistance=0.8, colors=c_arg, radius=1.0
+            pctdistance=0.8, colors=c_arg, radius=1.1,
+            textprops={'fontsize': FONT_SIZE_CHART}
         )
         for autotext in autotexts:
             autotext.set_color('white')
@@ -61,13 +72,13 @@ def create_chart_image(qs: QuestionSummary) -> io.BytesIO:
             autotext.set_path_effects([path_effects.withStroke(linewidth=2, foreground='#333333')])
 
         plt.axis('equal')
-        cols = 2 if len(labels) > 3 else 1
-        plt.legend(wrapped_labels, loc="upper center", bbox_to_anchor=(0.5, 0.0), ncol=cols, frameon=False, fontsize=8)
+        cols = 2 if len(labels) > 2 else 1
+        plt.legend(wrapped_labels, loc="upper center", bbox_to_anchor=(0.5, 0.0), ncol=cols, frameon=False, fontsize=10)
 
     plt.tight_layout()
     img_stream = io.BytesIO()
     plt.savefig(img_stream, format='png', dpi=CHART_DPI, bbox_inches='tight')
-    plt.close(fig)
+    plt.close(fig) 
     img_stream.seek(0)
     return img_stream
 
