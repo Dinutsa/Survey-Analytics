@@ -1,6 +1,14 @@
+"""
+Модуль експорту звіту у формат Word (.docx).
+ВЕРСІЯ: DATE ON TOP (Дата зверху).
+- Виправлено імпорт pandas (pd).
+- Додано дату справа перед заголовком.
+"""
+
 import io
 import textwrap
-import pandas as pd # Імпорт Pandas обов'язковий!
+from datetime import datetime  # <-- Імпорт дати
+import pandas as pd            # <-- ВИПРАВЛЕНО: Імпорт pandas як pd
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -10,7 +18,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
-from classification import QuestionInfo, QuestionType
+from classification import QuestionType
 from summary import QuestionSummary
 from typing import List
 
@@ -41,7 +49,6 @@ def create_chart_image(qs: QuestionSummary) -> io.BytesIO:
     values = qs.table["Кількість"]
     wrapped_labels = [textwrap.fill(l, 25) for l in labels]
 
-    # --- РОЗУМНА ПЕРЕВІРКА ТИПУ ---
     is_scale = (qs.question.qtype == QuestionType.SCALE)
     if not is_scale:
         try:
@@ -51,7 +58,6 @@ def create_chart_image(qs: QuestionSummary) -> io.BytesIO:
         except: pass
 
     if is_scale:
-        # СТОВПЧИКОВА
         fig = plt.figure(figsize=(6.0, 4.0))
         bars = plt.bar(wrapped_labels, values, color='#4F81BD', width=BAR_WIDTH)
         plt.ylabel('Кількість')
@@ -61,11 +67,9 @@ def create_chart_image(qs: QuestionSummary) -> io.BytesIO:
             plt.text(bar.get_x() + bar.get_width()/2., height + 0.1,
                      f'{int(height)}', ha='center', va='bottom', fontweight='bold')
     else:
-        # КРУГОВА
         fig = plt.figure(figsize=(6.0, 4.0))
         colors = ['#4F81BD', '#C0504D', '#9BBB59', '#8064A2', '#4BACC6', '#F79646']
         c_arg = colors[:len(values)] if len(values) <= len(colors) else None
-        
         wedges, texts, autotexts = plt.pie(
             values, labels=None, autopct='%1.1f%%', startangle=90,
             pctdistance=0.8, colors=c_arg, radius=1.0,
@@ -95,8 +99,15 @@ def build_docx_report(original_df, sliced_df, summaries, range_info) -> bytes:
     font.name = 'Times New Roman'
     font.size = Pt(12)
 
+    # --- ДАТА СПРАВА ЗВЕРХУ ---
+    date_str = datetime.now().strftime("%d.%m.%Y")
+    p_date = doc.add_paragraph(date_str)
+    p_date.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+
+    # Основний заголовок
     head = doc.add_heading('Звіт про результати опитування', 0)
     head.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    
     doc.add_paragraph(f"Всього анкет: {len(original_df)}")
     doc.add_paragraph(f"Оброблено: {len(sliced_df)}")
     doc.add_paragraph(f"Діапазон: {range_info}")
