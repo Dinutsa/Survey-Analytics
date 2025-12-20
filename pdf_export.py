@@ -1,43 +1,45 @@
 """
 Модуль експорту звіту у формат PDF.
-ВЕРСІЯ: Auto-Font Download + Smart Charts.
-- Автоматично завантажує шрифт DejaVuSans.ttf для підтримки української мови.
-- Використовує розумну логіку для вибору графіків (Стовпчики/Круг).
+ВЕРСІЯ: Binary Output Fix + Auto-Font.
+- Виправлено UnicodeEncodeError через використання тимчасового файлу.
+- Гарантована підтримка кирилиці (DejaVuSans).
 """
 
 import io
 import os
+import tempfile
 import textwrap
-import urllib.request  # Для завантаження шрифту
+import urllib.request
 import pandas as pd
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from fpdf import FPDF
 
-from classification import QuestionInfo, QuestionType
+from classification import QuestionType
 from summary import QuestionSummary
 from typing import List
 
 # --- НАЛАШТУВАННЯ ---
 CHART_DPI = 150
 BAR_WIDTH = 0.6
+# URL шрифту, який підтримує українську мову
 FONT_URL = "https://github.com/coreybutler/fonts/raw/master/ttf/DejaVuSans.ttf"
 FONT_FILE = "DejaVuSans.ttf"
 
 def check_and_download_font():
-    """Перевіряє, чи є файл шрифту. Якщо немає — завантажує."""
+    """Перевіряє наявність шрифту. Якщо немає — завантажує."""
     if not os.path.exists(FONT_FILE):
-        print(f"Завантажую шрифт {FONT_FILE} для підтримки кирилиці...")
         try:
+            print(f"Завантаження шрифту {FONT_FILE}...")
             urllib.request.urlretrieve(FONT_URL, FONT_FILE)
-            print("Шрифт успішно завантажено!")
+            print("Шрифт завантажено успішно.")
         except Exception as e:
-            print(f"Не вдалося завантажити шрифт: {e}")
+            print(f"Помилка завантаження шрифту: {e}")
 
 class PDFReport(FPDF):
     def header(self):
-        # Використовуємо DejaVu, якщо він вже зареєстрований, інакше Arial (який не підтримує укр)
+        # Пробуємо встановити Unicode шрифт, якщо він вже доданий
         try:
             self.set_font('DejaVu', '', 10)
         except:
@@ -109,31 +111,31 @@ def create_chart_image(qs: QuestionSummary) -> io.BytesIO:
     return img_stream
 
 def build_pdf_report(original_df, sliced_df, summaries, range_info) -> bytes:
-    # 1. Завантажуємо шрифт, якщо його немає
+    # 1. Гарантовано завантажуємо шрифт
     check_and_download_font()
     
     pdf = PDFReport()
     
-    # 2. Реєструємо шрифт для підтримки Unicode
-    try:
-        # uni=True вмикає підтримку Unicode у FPDF
+    # 2. Реєструємо шрифт. Якщо файлу немає - буде помилка (це краще, ніж "кракозябри")
+    if os.path.exists(FONT_FILE):
         pdf.add_font('DejaVu', '', FONT_FILE, uni=True)
         pdf.set_font('DejaVu', '', 12)
-    except Exception as e:
-        # Якщо щось пішло не так, повертаємось до Arial (але кирилиця не працюватиме)
-        print(f"Font Error: {e}")
+    else:
+        # Критичний випадок: файлу немає
         pdf.set_font('Arial', '', 12)
+        print("Warning: Unicode font not found, using Arial (expect encoding errors)")
 
     pdf.add_page()
 
-    # Титульна частина
+    # Титулка
     pdf.set_font_size(16)
     pdf.cell(0, 10, "Звіт про результати опитування", 0, 1, 'C')
     pdf.set_font_size(12)
     pdf.cell(0, 10, f"Всього анкет: {len(original_df)}", 0, 1, 'C')
     pdf.cell(0, 10, f"Оброблено: {len(sliced_df)}", 0, 1, 'C')
-    # Обробка спецсимволів (наприклад, тире) для PDF
-    safe_range = range_info.replace('–', '-')
+    
+    # Очистка тексту від символів, які можуть зламати PDF
+    safe_range = range_info.replace('–', '-').replace('—', '-')
     pdf.cell(0, 10, safe_range, 0, 1, 'C')
     pdf.ln(10)
 
@@ -142,8 +144,7 @@ def build_pdf_report(original_df, sliced_df, summaries, range_info) -> bytes:
         
         # Заголовок питання
         title = f"{qs.question.code}. {qs.question.text}"
-        # Замінюємо символи, які можуть зламати PDF, якщо шрифту немає (на всяк випадок)
-        title = title.replace('–', '-').replace('—', '-')
+        title = title.replace('–', '-').replace('—', '-').replace('’', "'")
         
         pdf.set_font_size(12)
         pdf.multi_cell(0, 6, title)
@@ -151,16 +152,13 @@ def build_pdf_report(original_df, sliced_df, summaries, range_info) -> bytes:
 
         # Таблиця
         pdf.set_font_size(10)
-        
-        # Заголовки таблиці
         pdf.cell(100, 8, "Варіант", 1)
         pdf.cell(30, 8, "Кільк.", 1)
         pdf.cell(30, 8, "%", 1)
         pdf.ln()
         
-        # Дані таблиці
         for row in qs.table.itertuples(index=False):
-            val_text = str(row[0])[:50].replace('–', '-')
+            val_text = str(row[0])[:50].replace('–', '-').replace('—', '-').replace('’', "'")
             pdf.cell(100, 8, val_text, 1)
             pdf.cell(30, 8, str(row[1]), 1)
             pdf.cell(30, 8, str(row[2]), 1)
@@ -172,25 +170,35 @@ def build_pdf_report(original_df, sliced_df, summaries, range_info) -> bytes:
         try:
             img = create_chart_image(qs)
             
-            # FPDF потребує файл на диску
-            import tempfile
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
-                tmp.write(img.getvalue())
-                tmp_path = tmp.name
+            # FPDF потребує фізичного файлу для вставки картинки
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_img:
+                tmp_img.write(img.getvalue())
+                tmp_img_path = tmp_img.name
             
-            # Вставляємо картинку
-            pdf.image(tmp_path, w=140)
+            pdf.image(tmp_img_path, w=140)
             pdf.ln(10)
             
-            # Видаляємо тимчасовий файл
-            os.unlink(tmp_path)
+            os.unlink(tmp_img_path)
         except Exception as e:
-            pdf.cell(0, 10, f"[Error chart: {e}]", 0, 1)
+            pdf.cell(0, 10, "[Error chart]", 0, 1)
 
-        # Перехід на нову сторінку, якщо мало місця
         if pdf.get_y() > 240:
             pdf.add_page()
 
-    # Повертаємо байти. 
-    # encode('latin-1') НЕ потрібен, якщо використовується Unicode шрифт!
-    return pdf.output(dest='S').encode('latin-1', 'ignore')
+    # --- ВИПРАВЛЕННЯ ПОМИЛКИ ЗБЕРЕЖЕННЯ ---
+    # Замість output(dest='S'), який повертає рядок і ламається на кодуванні,
+    # ми зберігаємо у тимчасовий файл і читаємо байти.
+    
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf:
+        # Зберігаємо PDF у файл
+        pdf.output(tmp_pdf.name)
+        tmp_pdf_path = tmp_pdf.name
+        
+    # Читаємо файл як байти
+    with open(tmp_pdf_path, 'rb') as f:
+        pdf_bytes = f.read()
+        
+    # Видаляємо файл
+    os.unlink(tmp_pdf_path)
+    
+    return pdf_bytes
