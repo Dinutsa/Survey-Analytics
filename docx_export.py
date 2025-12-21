@@ -146,6 +146,9 @@ def build_docx_report(original_df, sliced_df, summaries, range_info) -> bytes:
             doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
         except: pass
         doc.add_paragraph("\n")
+    
+    doc.add_paragraph(f"Дякую за увагу!")
+    doc.add_paragraph(f"Створено за допомогою додатку студентки МПУіК Каптар Діани")
 
     output = io.BytesIO()
     doc.save(output)
