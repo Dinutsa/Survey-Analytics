@@ -1,5 +1,4 @@
 import io
-import os
 import textwrap
 import pandas as pd  
 import matplotlib
@@ -90,23 +89,13 @@ def create_chart_image(qs: QuestionSummary) -> io.BytesIO:
 
 def build_pptx_report(original_df, sliced_df, summaries, range_info):
     prs = Presentation()
+
     # Слайд 1: Титул
     slide = prs.slides.add_slide(prs.slide_layouts[0])
-    if os.path.exists(LOGO_FILE):
-        slide.shapes.add_picture(LOGO_FILE, Inches(0.2), Inches(0.2), width=Inches(1.2))
-
-    txBox = slide.shapes.add_textbox(Inches(1.5), Inches(0.4), Inches(8), Inches(1))
-    tf = txBox.text_frame
-    p = tf.paragraphs[0]
-    p.text = UNIV_NAME
-    p.font.bold = True
-    p.font.size = Pt(16)
-    p.alignment = PP_ALIGN.LEFT 
-
-    title = slide.shapes.title
-    title.text = "Звіт про результати опитування"
-    subtitle = slide.placeholders[1]
-    subtitle.text = f"Всього анкет: {len(original_df)}\nОброблено: {len(sliced_df)}\nДіапазон: {range_info}"
+    try:
+        slide.shapes.title.text = "Звіт про результати опитування"
+        slide.placeholders[1].text = f"Всього анкет: {len(original_df)}\nОброблено: {len(sliced_df)}\n{range_info}"
+    except: pass
 
     # Слайди даних
     layout_index = 5 
