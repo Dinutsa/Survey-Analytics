@@ -33,6 +33,15 @@ def set_table_borders(table):
 
 class PDFReport(FPDF):
     def header(self):
+        if self.page_no() > 1:
+            try:
+                self.set_font("TimesUA", size=10)
+                self.cell(0, 10, "Звіт про результати опитування", ln=1, align='R')
+            except:
+                self.set_font("Times", "I", 10)
+                self.cell(0, 10, "Survey Report", ln=1, align='R')
+        else:
+            self.ln(5)
         pass
 
     def footer(self):
@@ -41,7 +50,7 @@ class PDFReport(FPDF):
             self.set_font("TimesUA", size=8)
         except:
             self.set_font("Times", "I", 8)
-        self.cell(0, 10, f'Page {self.page_no()}', align='C')
+        self.cell(0, 10, f'{self.page_no()}', align='C')
 
 def create_chart_image(qs: QuestionSummary) -> io.BytesIO:
     plt.close('all')
