@@ -17,7 +17,7 @@ from classification import QuestionInfo, QuestionType
 from summary import QuestionSummary
 from typing import List
 
-LOGO_FILE = "logo-chnu-header.svg"
+LOGO_FILE = "logo2.png"
 UNIV_NAME = "Чернівецький національний університет імені Юрія Фкдьковича"
 CHART_DPI = 150
 FONT_SIZE_CHART = 11        
