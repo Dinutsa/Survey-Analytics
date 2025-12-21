@@ -52,14 +52,14 @@ with st.sidebar:
             st.session_state.from_row, st.session_state.to_row = r_range
         
         c1, c2 = st.columns(2)
-        if c1.button("🚀 Обробити", type="primary", use_container_width=True):
+        if c1.button("Обробити", type="primary", use_container_width=True):
             sliced = slice_range(st.session_state.ld, st.session_state.from_row, st.session_state.to_row)
             st.session_state.sliced = sliced
             st.session_state.qinfo = classify_questions(sliced)
             st.session_state.summaries = build_all_summaries(sliced, st.session_state.qinfo)
             st.session_state.processed = True
             
-        if c2.button("❌ Скинути", use_container_width=True):
+        if c2.button("Скинути", use_container_width=True):
             st.session_state.clear()
             st.rerun()
 
@@ -98,7 +98,7 @@ if st.session_state.processed and st.session_state.sliced is not None:
     summary_map = {qs.question.code: qs for qs in summaries}
     question_codes = list(summary_map.keys())
 
-    t1, t2 = st.tabs(["📊 Аналіз", "📥 Експорт"])
+    t1, t2 = st.tabs(["Аналіз", "Експорт"])
     
     # === ВКЛАДКА 1: АНАЛІЗ ===
     with t1:
@@ -122,7 +122,7 @@ if st.session_state.processed and st.session_state.sliced is not None:
         st.divider()
 
         # 2. МУЛЬТИ-ФІЛЬТР
-        st.subheader("🔀 Глибокий аналіз (Мульти-фільтр)")
+        st.subheader("Аналіз відповідей")
         with st.expander("Налаштувати фільтри", expanded=True):
             f1_col1, f1_col2 = st.columns(2)
             with f1_col1:
@@ -136,7 +136,7 @@ if st.session_state.processed and st.session_state.sliced is not None:
                     except: pass
                     filter1_val = st.selectbox("Значення 1:", vals1, key="f1_v")
 
-            use_filter2 = st.checkbox("➕ Додати другий критерій")
+            use_filter2 = st.checkbox("+ Додати другий критерій")
             filter2_qs = None; filter2_val = None
             if use_filter2:
                 f2_col1, f2_col2 = st.columns(2)
@@ -150,10 +150,10 @@ if st.session_state.processed and st.session_state.sliced is not None:
                         except: pass
                         filter2_val = st.selectbox("Значення 2:", vals2, key="f2_v")
             st.divider()
-            target_code = st.selectbox("🎯 Питання для аналізу:", options=question_codes, format_func=lambda x: get_label(x, summary_map), key="target_q")
+            target_code = st.selectbox("Питання для аналізу:", options=question_codes, format_func=lambda x: get_label(x, summary_map), key="target_q")
             target_qs = summary_map[target_code] if target_code else None
 
-            if st.button("🔍 Застосувати фільтри", type="primary", use_container_width=True):
+            if st.button("Застосувати фільтри", type="primary", use_container_width=True):
                 if filter1_qs and filter1_val and target_qs:
                     subset = sliced[sliced[filter1_qs.question.text] == filter1_val]
                     info_text = f"{filter1_code}='{filter1_val}'"
@@ -174,7 +174,7 @@ if st.session_state.processed and st.session_state.sliced is not None:
                     else: st.error("Анкет не знайдено.")
                 else: st.warning("Оберіть параметри.")
         st.divider()
-        st.subheader("📋 Повний огляд всіх питань")
+        st.subheader("Повний огляд всіх питань")
         for q in summaries:
             if q.table.empty: continue
             with st.expander(f"{q.question.code}. {q.question.text}", expanded=True):
@@ -211,15 +211,13 @@ if st.session_state.processed and st.session_state.sliced is not None:
                 zf.writestr("results.pptx", build_pptx_report(_ld, _sl, _sm, _ri))
             return buf.getvalue()
 
-        # КНОПКИ ЗАВАНТАЖЕННЯ (РІВНІ ТА РОЗТЯГНУТІ)
         st.markdown("Оберіть формат для завантаження:")
         
-        # Розміщуємо 4 кнопки в один ряд
         cols = st.columns(4)
         
         with cols[0]:
             st.download_button(
-                label="📊 Завантажити Excel",
+                label="Завантажити Excel",
                 data=get_excel(st.session_state.ld.df, sliced, st.session_state.qinfo, summaries, range_info),
                 file_name="survey_results.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -228,7 +226,7 @@ if st.session_state.processed and st.session_state.sliced is not None:
         
         with cols[1]:
             st.download_button(
-                label="📄 Завантажити PDF",
+                label="Завантажити PDF",
                 data=get_pdf(st.session_state.ld.df, sliced, summaries, range_info),
                 file_name="survey_results.pdf",
                 mime="application/pdf",
@@ -237,7 +235,7 @@ if st.session_state.processed and st.session_state.sliced is not None:
             
         with cols[2]:
             st.download_button(
-                label="📝 Завантажити Word",
+                label="Завантажити Word",
                 data=get_docx(st.session_state.ld.df, sliced, summaries, range_info),
                 file_name="survey_results.docx",
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -246,7 +244,7 @@ if st.session_state.processed and st.session_state.sliced is not None:
             
         with cols[3]:
             st.download_button(
-                label="🖥️ Завантажити PPTX",
+                label="Завантажити PPTX",
                 data=get_pptx(st.session_state.ld.df, sliced, summaries, range_info),
                 file_name="survey_results.pptx",
                 mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
@@ -255,7 +253,7 @@ if st.session_state.processed and st.session_state.sliced is not None:
 
         st.divider()
         st.download_button(
-            label="🗂️ Завантажити все архівом (ZIP)", 
+            label="Завантажити все архівом (ZIP)", 
             data=get_zip_archive(st.session_state.ld.df, sliced, st.session_state.qinfo, summaries, range_info),
             file_name="full_report.zip", 
             mime="application/zip", 
@@ -264,4 +262,4 @@ if st.session_state.processed and st.session_state.sliced is not None:
         )
 
 elif not st.session_state.ld:
-    st.info("👈 Завантажте файл у меню зліва.")
+    st.info("Завантажте файл у меню зліва.")
