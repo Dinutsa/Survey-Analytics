@@ -1,13 +1,8 @@
-"""
-Модуль експорту звіту у формат PowerPoint (.pptx).
-ВЕРСІЯ: FINAL (Розумне визначення типу графіка + Bar Charts).
-"""
-
 import io
 import textwrap
-import pandas as pd  # Важливо для pd.to_numeric
+import pandas as pd  
 import matplotlib
-matplotlib.use('Agg') # Обов'язково для сервера
+matplotlib.use('Agg') 
 import matplotlib.pyplot as plt
 
 from pptx import Presentation
@@ -21,7 +16,6 @@ from classification import QuestionInfo, QuestionType
 from summary import QuestionSummary
 from typing import List
 
-# --- НАЛАШТУВАННЯ ---
 CHART_DPI = 150
 FONT_SIZE_CHART = 11        
 FONT_SIZE_HEADER = 12 
@@ -29,7 +23,6 @@ FONT_SIZE_DATA = 11
 BAR_WIDTH = 0.6
 
 def set_table_grid_style(table):
-    """Вмикає чорні рамки."""
     tbl = table._tbl
     tblPr = tbl.tblPr
     tblStyle = tblPr.find(qn('a:tableStyleId'))
@@ -39,7 +32,6 @@ def set_table_grid_style(table):
     tblStyle.text = '{5940675A-B579-460E-94D1-54222C63F5DA}'
 
 def create_chart_image(qs: QuestionSummary) -> io.BytesIO:
-    """Генерує зображення діаграми (Bar або Pie)."""
     plt.close('all') 
     plt.clf()
     plt.rcParams.update({'font.size': FONT_SIZE_CHART})
@@ -48,19 +40,15 @@ def create_chart_image(qs: QuestionSummary) -> io.BytesIO:
     values = qs.table["Кількість"]
     wrapped_labels = [textwrap.fill(l, 25) for l in labels]
 
-    # --- РОЗУМНА ПЕРЕВІРКА ТИПУ ---
     is_scale = (qs.question.qtype == QuestionType.SCALE)
     if not is_scale:
         try:
-            # Перевіряємо, чи є відповіді числами (наприклад "1", "5")
             vals = pd.to_numeric(qs.table["Варіант відповіді"], errors='coerce')
             if vals.notna().all() and vals.min() >= 0 and vals.max() <= 10:
                 is_scale = True
         except: pass
 
-    # --- МАЛЮВАННЯ ---
     if is_scale:
-        # СТОВПЧИКОВА (Bar)
         fig = plt.figure(figsize=(6.0, 4.5))
         bars = plt.bar(wrapped_labels, values, color='#4F81BD', width=BAR_WIDTH)
         plt.ylabel('Кількість')
@@ -71,7 +59,6 @@ def create_chart_image(qs: QuestionSummary) -> io.BytesIO:
             plt.text(bar.get_x() + bar.get_width()/2., height + 0.1,
                      f'{int(height)}', ha='center', va='bottom', fontweight='bold')
     else:
-        # КРУГОВА (Pie)
         fig = plt.figure(figsize=(6.0, 5.0))
         colors = ['#4F81BD', '#C0504D', '#9BBB59', '#8064A2', '#4BACC6', '#F79646']
         c_arg = colors[:len(values)] if len(values) <= len(colors) else None
@@ -106,18 +93,6 @@ def build_pptx_report(original_df, sliced_df, summaries, range_info):
     try:
         slide.shapes.title.text = "Звіт про результати опитування"
         slide.placeholders[1].text = f"Всього анкет: {len(original_df)}\nОброблено: {len(sliced_df)}\n{range_info}"
-    except: pass
-
-    # Слайд 2: Технічний
-    slide = prs.slides.add_slide(prs.slide_layouts[1])
-    try:
-        slide.shapes.title.text = "Технічна інформація"
-        tf = slide.placeholders[1].text_frame
-        tf.text = "Параметри вибірки:"
-        for t in [f"Загальна кількість: {len(original_df)}", f"У звіті: {len(sliced_df)}", f"Діапазон: {range_info}"]:
-            p = tf.add_paragraph()
-            p.text = t
-            p.font.size = Pt(20)
     except: pass
 
     # Слайди даних
@@ -175,6 +150,12 @@ def build_pptx_report(original_df, sliced_df, summaries, range_info):
             img_stream = create_chart_image(qs)
             slide.shapes.add_picture(img_stream, Inches(5.2), Inches(2.0), width=Inches(4.6))
         except: pass
+
+    slide = prs.slides.add_slide(prs.slide_layouts[0])
+    try:
+        slide.shapes.title.text = "Дякую за увагу"
+        slide.placeholders[1].text = f"Створено за допомогою додатку студентки МПУіК Каптар Діани"
+    except: pass
 
     output = io.BytesIO()
     prs.save(output)
