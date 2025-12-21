@@ -9,7 +9,7 @@ from docx.shared import Inches, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
-
+from fpdf import FPDF
 from classification import QuestionInfo, QuestionType
 from summary import QuestionSummary
 from typing import List
@@ -30,6 +30,18 @@ def set_table_borders(table):
         border.set(qn('w:color'), '000000')
         tblBorders.append(border)
     tblPr.append(tblBorders)
+
+class PDFReport(FPDF):
+    def header(self):
+        pass
+
+    def footer(self):
+        self.set_y(-15)
+        try:
+            self.set_font("TimesUA", size=8)
+        except:
+            self.set_font("Times", "I", 8)
+        self.cell(0, 10, f'Page {self.page_no()}', align='C')
 
 def create_chart_image(qs: QuestionSummary) -> io.BytesIO:
     plt.close('all')
