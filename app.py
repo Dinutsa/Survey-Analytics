@@ -211,13 +211,13 @@ if st.session_state.processed and st.session_state.sliced is not None:
                 zf.writestr("results.pptx", build_pptx_report(_ld, _sl, _sm, _ri))
             return buf.getvalue()
 
-        st.markdown("Оберіть формат для завантаження:")
+        st.markdown("Оберіть формат для завантаження: 👇")
         
         cols = st.columns(4)
         
         with cols[0]:
             st.download_button(
-                label="Завантажити Excel",
+                label="Завантажити Excel ",
                 data=get_excel(st.session_state.ld.df, sliced, st.session_state.qinfo, summaries, range_info),
                 file_name="survey_results.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -235,7 +235,7 @@ if st.session_state.processed and st.session_state.sliced is not None:
             
         with cols[2]:
             st.download_button(
-                label="Завантажити Word",
+                label="Завантажити Word ",
                 data=get_docx(st.session_state.ld.df, sliced, summaries, range_info),
                 file_name="survey_results.docx",
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -244,7 +244,7 @@ if st.session_state.processed and st.session_state.sliced is not None:
             
         with cols[3]:
             st.download_button(
-                label="Завантажити PPTX",
+                label="Завантажити PPTX ",
                 data=get_pptx(st.session_state.ld.df, sliced, summaries, range_info),
                 file_name="survey_results.pptx",
                 mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
@@ -253,7 +253,7 @@ if st.session_state.processed and st.session_state.sliced is not None:
 
         st.divider()
         st.download_button(
-            label="Завантажити все архівом (ZIP)", 
+            label="Завантажити все архівом (ZIP) 🗃️", 
             data=get_zip_archive(st.session_state.ld.df, sliced, st.session_state.qinfo, summaries, range_info),
             file_name="full_report.zip", 
             mime="application/zip", 
