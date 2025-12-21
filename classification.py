@@ -28,14 +28,12 @@ class QuestionInfo:
 def detect_type(series: pd.Series) -> QuestionType:
     """
     Евристичне визначення типу питання за розподілом відповідей.
-
     :param series: стовпець із відповідями.
     """
     v = series.dropna()
     if v.empty:
         return QuestionType.OPEN
 
-    # Уніфікуємо до рядка
     v_str = v.astype(str).str.strip()
     uniq = set(v_str.unique())
     n_unique = len(uniq)
