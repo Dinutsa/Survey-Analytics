@@ -262,4 +262,4 @@ if st.session_state.processed and st.session_state.sliced is not None:
         )
 
 elif not st.session_state.ld:
-    st.info("Завантажте файл у меню зліва.")
+    st.info("👈 Завантажте файл у меню зліва.")
