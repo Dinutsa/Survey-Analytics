@@ -148,7 +148,8 @@ def build_docx_report(original_df, sliced_df, summaries, range_info) -> bytes:
         doc.add_paragraph("\n")
     
     doc.add_paragraph(f"Дякую за увагу!")
-    doc.add_paragraph(f"Створено за допомогою додатку студентки МПУіК Каптар Діани")
+    doc.add_paragraph(f"Створено за допомогою додатку студентки МПУіК Каптар Діани.")
+    doc.add_paragraph(f"Керівник проєкту – доцент Фратавчан Валерій Григорович.")
 
     output = io.BytesIO()
     doc.save(output)
