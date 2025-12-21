@@ -1,4 +1,5 @@
 import io
+import os
 import textwrap
 import pandas as pd  
 import matplotlib
@@ -16,6 +17,8 @@ from classification import QuestionInfo, QuestionType
 from summary import QuestionSummary
 from typing import List
 
+LOGO_FILE = "logo-chnu-header.svg"
+UNIV_NAME = "Чернівецький національний університет імені Юрія Фкдьковича"
 CHART_DPI = 150
 FONT_SIZE_CHART = 11        
 FONT_SIZE_HEADER = 12 
@@ -87,13 +90,23 @@ def create_chart_image(qs: QuestionSummary) -> io.BytesIO:
 
 def build_pptx_report(original_df, sliced_df, summaries, range_info):
     prs = Presentation()
-
     # Слайд 1: Титул
     slide = prs.slides.add_slide(prs.slide_layouts[0])
-    try:
-        slide.shapes.title.text = "Звіт про результати опитування"
-        slide.placeholders[1].text = f"Всього анкет: {len(original_df)}\nОброблено: {len(sliced_df)}\n{range_info}"
-    except: pass
+    if os.path.exists(LOGO_FILE):
+        slide.shapes.add_picture(LOGO_FILE, Inches(0.2), Inches(0.2), width=Inches(1.2))
+
+    txBox = slide.shapes.add_textbox(Inches(1.5), Inches(0.4), Inches(8), Inches(1))
+    tf = txBox.text_frame
+    p = tf.paragraphs[0]
+    p.text = UNIV_NAME
+    p.font.bold = True
+    p.font.size = Pt(16)
+    p.alignment = PP_ALIGN.LEFT 
+
+    title = slide.shapes.title
+    title.text = "Звіт про результати опитування"
+    subtitle = slide.placeholders[1]
+    subtitle.text = f"Всього анкет: {len(original_df)}\nОброблено: {len(sliced_df)}\nДіапазон: {range_info}"
 
     # Слайди даних
     layout_index = 5 
@@ -152,25 +165,36 @@ def build_pptx_report(original_df, sliced_df, summaries, range_info):
         except: pass
 
  
-    slide_layout = prs.slide_layouts[1]
+    slide_layout = prs.slide_layouts[6] 
     slide = prs.slides.add_slide(slide_layout)
-    slide.shapes.title.text = "Дякую за увагу!"
 
-    body = slide.placeholders[1]
-    tf = body.text_frame
-    tf.clear() 
+    if os.path.exists(LOGO_FILE):
+        slide.shapes.add_picture(LOGO_FILE, Inches(4.25), Inches(1.0), width=Inches(1.5))
+
+    tb_thanks = slide.shapes.add_textbox(Inches(0), Inches(3.0), Inches(10), Inches(1.5))
+    tf_thanks = tb_thanks.text_frame
+    p_thanks = tf_thanks.paragraphs[0]
+    p_thanks.text = "Дякую за увагу!"
+    p_thanks.alignment = PP_ALIGN.CENTER
+    p_thanks.font.size = Pt(32)
+    p_thanks.font.bold = True
+    p_thanks.font.color.rgb = RGBColor(0, 0, 0) 
+
+    tb_info = slide.shapes.add_textbox(Inches(0), Inches(4.5), Inches(10), Inches(2))
+    tf_info = tb_info.text_frame
+    
     lines = [
         "Створено за допомогою додатку студентки МПУіК – Каптар Діани.",
         "Керівник проєкту – доцент Фратавчан Валерій Григорович."
     ]
 
     for line in lines:
-        p = tf.add_paragraph()
+        p = tf_info.add_paragraph()
         p.text = line
-        p.alignment = PP_ALIGN.CENTER         
-        p.font.color.rgb = RGBColor(80, 80, 80)
-
-    body.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+        p.alignment = PP_ALIGN.CENTER
+        p.font.size = Pt(18)  
+        p.font.color.rgb = RGBColor(80, 80, 80) 
+        p.space_after = Pt(10) 
 
     output = io.BytesIO()
     prs.save(output)
