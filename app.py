@@ -5,8 +5,8 @@ import streamlit as st
 import plotly.express as px
 import pandas as pd
 import matplotlib.pyplot as plt
+import base64
 
-# Імпорти
 from data_loader import load_excels, get_row_bounds, slice_range
 from classification import classify_questions, QuestionType
 from summary import build_all_summaries
@@ -18,6 +18,57 @@ from pptx_export import build_pptx_report
 
 st.set_page_config(page_title="Обробка результатів", layout="wide")
 
+def load_svg(filename):
+    """Читає файл з папки icons і повертає його вміст як рядок."""
+    filepath = os.path.join("icons", filename) 
+    if os.path.exists(filepath):
+        with open(filepath, "r", encoding="utf-8") as f:
+            return f.read()
+    else:
+        return "" 
+
+# --- 2. ЗАВАНТАЖУЄМО ВАШІ ІКОНКИ ---
+SVG_WORD = load_svg("word.svg") 
+SVG_EXCEL = load_svg("xls.svg")
+SVG_PDF = load_svg("pdf.svg")
+SVG_PPT = load_svg("ppt.svg") 
+
+def render_svg_button(data, filename, label, bg_color, icon_svg):
+    b64 = base64.b64encode(data.getvalue()).decode()
+    
+    button_html = f"""
+    <a href="data:application/octet-stream;base64,{b64}" download="{filename}" style="
+        display: inline-flex;
+        align-items: center;
+        justify-content: flex-start; 
+        background-color: {bg_color};
+        color: white;
+        padding: 0.6rem 1.2rem;
+        border-radius: 8px;
+        text-decoration: none;
+        font-family: sans-serif;
+        font-weight: 600;
+        font-size: 16px;
+        border: none;
+        width: 100%;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        margin-bottom: 10px;
+    ">
+        <div style="
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            width: 24px; 
+            height: 24px; 
+            margin-right: 12px;
+            fill: white; 
+        ">
+            {icon_svg}
+        </div>
+        <span>{label}</span>
+    </a>
+    """
+    return button_html
 # Ініціалізація
 if 'processed' not in st.session_state: st.session_state.processed = False
 if 'ld' not in st.session_state: st.session_state.ld = None
@@ -213,43 +264,52 @@ if st.session_state.processed and st.session_state.sliced is not None:
 
         st.markdown("Оберіть формат для завантаження:")
         
-        cols = st.columns(4)
+        st.subheader("📥 Завантаження звітів")
+col1, col2 = st.columns(2)
+
+with col1:
+    # PDF
+    if 'pdf_bytes' in locals(): # Перевірка, чи згенеровано файл
+        st.markdown(render_svg_button(
+            data=io.BytesIO(pdf_bytes), 
+            filename="report.pdf", 
+            label="Завантажити PDF", 
+            bg_color="#E74C3C",  # Червоний для PDF
+            icon_svg=SVG_PDF
+        ), unsafe_allow_html=True)
         
-        with cols[0]:
-            st.download_button(
-                label="Завантажити Excel",
-                data=get_excel(st.session_state.ld.df, sliced, st.session_state.qinfo, summaries, range_info),
-                file_name="survey_results.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
-            )
+    # Word
+    if 'docx_bytes' in locals():
+        st.markdown(render_svg_button(
+            data=io.BytesIO(docx_bytes), 
+            filename="report.docx", 
+            label="Завантажити Word", 
+            bg_color="#2B579A",  # Синій для Word
+            icon_svg=SVG_WORD
+        ), unsafe_allow_html=True)
+
+with col2:
+    # Excel
+    if 'excel_bytes' in locals():
+        st.markdown(render_svg_button(
+            data=io.BytesIO(excel_bytes), 
+            filename="data.xlsx", 
+            label="Завантажити Excel", 
+            bg_color="#217346",  # Зелений для Excel
+            icon_svg=SVG_EXCEL
+        ), unsafe_allow_html=True)
         
-        with cols[1]:
-            st.download_button(
-                label="Завантажити PDF",
-                data=get_pdf(st.session_state.ld.df, sliced, summaries, range_info),
-                file_name="survey_results.pdf",
-                mime="application/pdf",
-                use_container_width=True
-            )
-            
-        with cols[2]:
-            st.download_button(
-                label="Завантажити Word",
-                data=get_docx(st.session_state.ld.df, sliced, summaries, range_info),
-                file_name="survey_results.docx",
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                use_container_width=True
-            )
-            
-        with cols[3]:
-            st.download_button(
-                label="Завантажити PPTX",
-                data=get_pptx(st.session_state.ld.df, sliced, summaries, range_info),
-                file_name="survey_results.pptx",
-                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                use_container_width=True
-            )
+    # PowerPoint
+    if 'pptx_bytes' in locals():
+        st.markdown(render_svg_button(
+            data=io.BytesIO(pptx_bytes), 
+            filename="presentation.pptx", 
+            label="Завантажити PPTX", 
+            bg_color="#D24726",  # Оранжевий для PPT
+            icon_svg=SVG_PPT
+        ), unsafe_allow_html=True)
+
+
 
         st.divider()
         st.download_button(
