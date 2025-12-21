@@ -9,9 +9,9 @@ from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.enum.text import PP_ALIGN
 from pptx.dml.color import RGBColor
+from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 from pptx.oxml.xmlchemy import OxmlElement
 from pptx.oxml.ns import qn
-
 from classification import QuestionInfo, QuestionType
 from summary import QuestionSummary
 from typing import List
@@ -151,13 +151,26 @@ def build_pptx_report(original_df, sliced_df, summaries, range_info):
             slide.shapes.add_picture(img_stream, Inches(5.2), Inches(2.0), width=Inches(4.6))
         except: pass
 
-    slide = prs.slides.add_slide(prs.slide_layouts[0])
-    try:
-        slide.shapes.title.text = "Дякую за увагу!"
-        slide.placeholders[1].text = f"Створено за допомогою додатку студентки МПУіК - Каптар Діани."
-        slide.placeholders[2].text = f"Керівник проєкту – доцент Фратавчан Валерій Григорович."
+ 
+    slide_layout = prs.slide_layouts[1]
+    slide = prs.slides.add_slide(slide_layout)
+    slide.shapes.title.text = "Дякую за увагу!"
 
-    except: pass
+    body = slide.placeholders[1]
+    tf = body.text_frame
+    tf.clear() 
+    lines = [
+        "Створено за допомогою додатку студентки МПУіК – Каптар Діани.",
+        "Керівник проєкту – доцент Фратавчан Валерій Григорович."
+    ]
+
+    for line in lines:
+        p = tf.add_paragraph()
+        p.text = line
+        p.alignment = PP_ALIGN.CENTER         
+        p.font.color.rgb = RGBColor(80, 80, 80)
+
+    body.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
 
     output = io.BytesIO()
     prs.save(output)
