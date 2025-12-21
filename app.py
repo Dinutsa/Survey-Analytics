@@ -23,7 +23,7 @@ if 'processed' not in st.session_state: st.session_state.processed = False
 if 'ld' not in st.session_state: st.session_state.ld = None
 if 'uploaded_files_store' not in st.session_state: st.session_state.uploaded_files_store = None
 
-st.title("Аналіз результатів опитувань (Google Forms)")
+st.title("Аналіз результатів опитувань студентів (Google Forms)")
 
 # --- SIDEBAR ---
 with st.sidebar:
