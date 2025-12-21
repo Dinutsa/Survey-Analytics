@@ -10,9 +10,9 @@ from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.enum.text import PP_ALIGN
 from pptx.dml.color import RGBColor
-from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 from pptx.oxml.xmlchemy import OxmlElement
 from pptx.oxml.ns import qn
+
 from classification import QuestionInfo, QuestionType
 from summary import QuestionSummary
 from typing import List
@@ -164,37 +164,13 @@ def build_pptx_report(original_df, sliced_df, summaries, range_info):
             slide.shapes.add_picture(img_stream, Inches(5.2), Inches(2.0), width=Inches(4.6))
         except: pass
 
- 
-    slide_layout = prs.slide_layouts[6] 
-    slide = prs.slides.add_slide(slide_layout)
+    slide = prs.slides.add_slide(prs.slide_layouts[0])
+    try:
+        slide.shapes.title.text = "Дякую за увагу!"
+        slide.placeholders[1].text = f"Створено за допомогою додатку студентки МПУіК - Каптар Діани."
+        slide.placeholders[2].text = f"Керівник проєкту – доцент Фратавчан Валерій Григорович."
 
-    if os.path.exists(LOGO_FILE):
-        slide.shapes.add_picture(LOGO_FILE, Inches(4.25), Inches(1.0), width=Inches(1.5))
-
-    tb_thanks = slide.shapes.add_textbox(Inches(0), Inches(3.0), Inches(10), Inches(1.5))
-    tf_thanks = tb_thanks.text_frame
-    p_thanks = tf_thanks.paragraphs[0]
-    p_thanks.text = "Дякую за увагу!"
-    p_thanks.alignment = PP_ALIGN.CENTER
-    p_thanks.font.size = Pt(32)
-    p_thanks.font.bold = True
-    p_thanks.font.color.rgb = RGBColor(0, 0, 0) 
-
-    tb_info = slide.shapes.add_textbox(Inches(0), Inches(4.5), Inches(10), Inches(2))
-    tf_info = tb_info.text_frame
-    
-    lines = [
-        "Створено за допомогою додатку студентки МПУіК – Каптар Діани.",
-        "Керівник проєкту – доцент Фратавчан Валерій Григорович."
-    ]
-
-    for line in lines:
-        p = tf_info.add_paragraph()
-        p.text = line
-        p.alignment = PP_ALIGN.CENTER
-        p.font.size = Pt(18)  
-        p.font.color.rgb = RGBColor(80, 80, 80) 
-        p.space_after = Pt(10) 
+    except: pass
 
     output = io.BytesIO()
     prs.save(output)
