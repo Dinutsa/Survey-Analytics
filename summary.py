@@ -1,21 +1,8 @@
-"""
-Модуль статистичної обробки результатів опитувань.
-
-Використовуються базові методи частотного аналізу:
-- підрахунок кількості відповідей;
-- розрахунок відсоткових часток;
-що відповідає класичним підходам до аналізу соціологічних опитувань.
-"""
-
 from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import Dict, List
-
 import pandas as pd
-
 from classification import QuestionInfo, QuestionType
-
 
 @dataclass
 class QuestionSummary:
@@ -27,7 +14,7 @@ def _build_summary_for_series(
     series: pd.Series, question: QuestionInfo
 ) -> QuestionSummary:
     """
-    Формує підсумкову таблицю для одного питання (окрім відкритих).
+    Формує підсумкову таблицю для одного питання.
     """
     v = series.dropna()
 
@@ -56,9 +43,6 @@ def build_all_summaries(
 ) -> List[QuestionSummary]:
     """
     Формує спискок зведених таблиць для всіх релевантних питань.
-
-    :param df: підтаблиця з відповідями (обраний діапазон).
-    :param qinfo: метадані питань за результатами класифікації.
     """
     summaries: List[QuestionSummary] = []
 
