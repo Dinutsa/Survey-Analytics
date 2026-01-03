@@ -263,3 +263,18 @@ if st.session_state.processed and st.session_state.sliced is not None:
 
 elif not st.session_state.ld:
     st.info("👈 Завантажте файл у меню зліва.")
+
+st.markdown("<br><br>", unsafe_allow_html=True)
+
+st.markdown("---")
+
+footer_html = """
+<div style='text-align: center; color: #808080; font-size: 14px;'>
+    <p>
+        Розроблено в рамках дипломної роботи <br>
+        <b>Автор роботи: студентка МПУіК - Каптар Діана. Керівник проєкту – доцент Фратавчан Валерій Григорович.
+</b> | 2025 р.
+    </p>
+</div>
+"""
+st.markdown(footer_html, unsafe_allow_html=True)
