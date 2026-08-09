@@ -1,7 +1,7 @@
 import time
 from playwright.sync_api import sync_playwright
 
-APP_URL = "https://social-analysis-chnu25.streamlit.app"
+APP_URL = "https://survey-analytics-25.streamlit.app"
 
 def wake_up_streamlit():
     print(f"🌐 Відкриваємо сайт: {APP_URL}")
